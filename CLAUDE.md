@@ -27,6 +27,10 @@ When the user shares a game (Lichess URL, PGN, or move list):
 
 **Player review** — When given a Lichess username, look for recurring patterns across games.
 
+## Available MCP tools
+
+- `fetch_recent_games` — fetch a Lichess user's most recent games by username (filters: max, perfType, rated, color). Returns players, ratings, result, opening name, and the full move list per game, so a selected game can be reviewed directly.
+
 ## Coaching tone
 
 - Socratic first: ask what the user was thinking before explaining

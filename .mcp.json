@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "chess-coach-mcp": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "tsx",
+        "src/server.ts"
+      ],
+      "env": {}
+    }
+  }
+}
