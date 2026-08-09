@@ -3,13 +3,32 @@ name: lichess-fetch
 description: Fetch chess game and player data from the Lichess API — recent games, ratings, openings, move lists. Use whenever the user shares a Lichess username or URL, or asks to pull games/stats from Lichess.
 ---
 
-Fetch data directly from the Lichess HTTP API with `curl` via Bash — there is no server or SDK involved. For anything beyond what's covered here, consult the full spec at `specs/lichess-api.json` (base URL `https://lichess.org`).
+Fetch data directly from the Lichess HTTP API with `curl` via Bash — there is no server or SDK involved. For anything beyond what's covered here, consult the full spec at `specs/lichess-api.json` in the **project root** (not under this skill directory) — base URL `https://lichess.org`.
+
+## Setup (first use in this project)
+
+These curl calls authenticate via `$LICHESS_API_TOKEN`, injected through `.claude/settings.local.json`'s `env` key (gitignored, never committed). Before the first fetch in a session, check it's actually set:
+
+```bash
+[ -n "$LICHESS_API_TOKEN" ] && [ "$LICHESS_API_TOKEN" != "REPLACE_ME" ] && echo ok || echo missing
+```
+
+If it prints `missing`, stop and walk the user through setup instead of guessing at query params or retrying — unauthenticated requests to `/api/games/user/` are unreliable (expect stray 404s, not just 429s):
+
+1. Create a personal API token at `https://lichess.org/account/oauth/token/create` — no scopes needed, this only reads public game history.
+2. Open `.claude/settings.local.json` in this repo and replace `"REPLACE_ME"` under `"env": { "LICHESS_API_TOKEN": ... }` with the real token. Do this directly in an editor, not by pasting the token into chat — it's a secret and chat transcripts are stored.
+3. Start a new Claude Code session (env vars from settings load at startup, so the current session won't pick it up).
+
+If the file or key is missing entirely, recreate it:
+```json
+{ "env": { "LICHESS_API_TOKEN": "REPLACE_ME" } }
+```
 
 ## Fetching a user's recent games
 
 ```bash
 curl -s -H "Accept: application/x-ndjson" \
-  ${LICHESS_API_TOKEN:+-H "Authorization: Bearer $LICHESS_API_TOKEN"} \
+  -H "Authorization: Bearer $LICHESS_API_TOKEN" \
   "https://lichess.org/api/games/user/<username>?max=10&moves=true&opening=true&tags=false"
 ```
 
@@ -22,11 +41,6 @@ Query params:
 - `rated=true|false` — only rated or only casual
 - `color=white|black` — only games played as that color
 
-<<<<<<< HEAD
-`LICHESS_API_TOKEN` is optional; include the `Authorization: Bearer` header only when it's set in the environment (unauthenticated requests work fine for public game history, just with lower rate limits).
-
-=======
->>>>>>> origin/worktree-dazzling-wishing-harbor
 ## Response format
 
 The response is **NDJSON** — one JSON object per line, newest game first. Split on newlines and `JSON.parse`/`jq` each line individually; it is not a single JSON array. Fields worth pulling out per game for a review:
@@ -40,14 +54,10 @@ The response is **NDJSON** — one JSON object per line, newest game first. Spli
 
 ## Errors
 
-<<<<<<< HEAD
-- `404` — username doesn't exist; tell the user and ask them to double check it.
-=======
-- `404` — most likely `LICHESS_API_TOKEN` is unset or invalid (see above), not necessarily a bad username. Only conclude the username is wrong after confirming the token is set.
->>>>>>> origin/worktree-dazzling-wishing-harbor
+- `404` — check `$LICHESS_API_TOKEN` is set first (see Setup above); unauthenticated requests to this endpoint can 404 even for valid usernames. Only conclude the username is wrong after confirming the token is set and valid.
 - `429` — rate limited; wait roughly a minute before retrying, don't hammer it.
 - Any other non-2xx — surface the status code and move on; don't retry silently.
 
 ## Other endpoints
 
-`specs/lichess-api.json` covers the rest of the API (single game by id, user profile, puzzles, etc.) if a coaching flow needs more than recent-games history — look up the relevant path there rather than guessing at parameters.
+`specs/lichess-api.json` (project root) covers the rest of the API (single game by id, user profile, puzzles, etc.) if a coaching flow needs more than recent-games history — look up the relevant path there rather than guessing at parameters.
