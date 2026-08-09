@@ -20,10 +20,18 @@ pnpm install   # install deps
 
 **Skills (in `.claude/skills/`):**
 - `lichess-fetch` — fetches games/player data from the Lichess API via `curl`. Spec: `specs/lichess-api.json` (base URL `https://lichess.org`; some endpoints stream NDJSON; auth via Bearer token).
-- `stockfish-local` — installs Stockfish if missing, then evaluates positions by piping UCI commands into it. Spec: `specs/uci_spec.md` (communication via stdin/stdout: send `position`/`go`, read `bestmove`/`info` lines).
+- `stockfish-local` — installs Stockfish if missing, then evaluates positions by piping UCI commands into it. Spec: `specs/uci_spec.md` (communication via stdin/stdout: send `position`/`go`, read `bestmove`/`info` lines). Also ships `scripts/scan_game.py` and `scripts/probe_moments.py` for the two-pass whole-game sweep.
+- `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, and a both-themes preview/audit.
 - `dev-mode` (this skill) — switches Claude out of the chess-coach persona for codebase work.
 
-**Pattern:** each skill's `SKILL.md` is self-contained instructions for Claude to follow directly — no code to write or register. Adding a new capability means writing a new `.claude/skills/<name>/SKILL.md` with a trigger-worthy `description` in the frontmatter, not a new source file.
+**Pattern:** each skill's `SKILL.md` is self-contained instructions for Claude to follow directly — nothing to register, and no build step. Adding a capability means writing a new `.claude/skills/<name>/SKILL.md` with a trigger-worthy `description` in the frontmatter.
+
+A skill may also carry **helper scripts** in its own `scripts/` directory, for work that is
+slow, fiddly, or easy to get subtly wrong when re-derived from prose each time (engine
+sweeps, SVG geometry, accessibility audits). Run them with `uv run --with <pkg>` — never
+install into system Python. Keep them argparse CLIs that are also importable, so Claude can
+either shell out or `from render_board import board_html`. Prose in `SKILL.md` should say
+*when and why*; the script holds the *how*.
 
 ## Keeping CLAUDE.md current
 

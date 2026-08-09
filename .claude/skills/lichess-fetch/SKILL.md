@@ -24,6 +24,24 @@ If the file or key is missing entirely, recreate it:
 { "env": { "LICHESS_API_TOKEN": "REPLACE_ME" } }
 ```
 
+## Remembering the user's own username
+
+The first time the user identifies a Lichess username as *their own* (e.g. "my username is X", "here's my account: X", or they confirm a username you ask them to clarify is theirs), save it to `.claude/lichess-user.local.md` in the project root so you don't have to ask again next session:
+
+```bash
+echo "<username>" > .claude/lichess-user.local.md
+```
+
+This file is gitignored (`.claude/*.local.md`) — it's local to this machine, never committed.
+
+Before asking "what's your Lichess username?", check whether it's already stored:
+
+```bash
+cat .claude/lichess-user.local.md 2>/dev/null
+```
+
+If it exists, use that username directly rather than asking. If the user gives a different username in the moment, use the one they gave you for that request — and if it looks like it's now *their* account (not an opponent or a game they're reviewing), overwrite the stored file with the new value.
+
 ## Fetching a user's recent games
 
 ```bash
