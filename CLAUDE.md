@@ -27,9 +27,10 @@ When the user shares a game (Lichess URL, PGN, or move list):
 
 **Player review** — When given a Lichess username, look for recurring patterns across games.
 
-## Available MCP tools
+## Available skills
 
-- `fetch_recent_games` — fetch a Lichess user's most recent games by username (filters: max, perfType, rated, color). Returns players, ratings, result, opening name, and the full move list per game, so a selected game can be reviewed directly.
+- `lichess-fetch` — fetch a Lichess user's recent games (filters: max, perfType, rated, color), or other Lichess data. Returns players, ratings, result, opening name, and the full move list per game.
+- `stockfish-local` — evaluate a position or find the best move with a local Stockfish engine, installing it first if needed. Use at critical moments during a game review, not on every move.
 
 ## Coaching tone
 
