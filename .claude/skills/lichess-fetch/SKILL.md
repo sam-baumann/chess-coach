@@ -22,8 +22,11 @@ Query params:
 - `rated=true|false` — only rated or only casual
 - `color=white|black` — only games played as that color
 
+<<<<<<< HEAD
 `LICHESS_API_TOKEN` is optional; include the `Authorization: Bearer` header only when it's set in the environment (unauthenticated requests work fine for public game history, just with lower rate limits).
 
+=======
+>>>>>>> origin/worktree-dazzling-wishing-harbor
 ## Response format
 
 The response is **NDJSON** — one JSON object per line, newest game first. Split on newlines and `JSON.parse`/`jq` each line individually; it is not a single JSON array. Fields worth pulling out per game for a review:
@@ -37,7 +40,11 @@ The response is **NDJSON** — one JSON object per line, newest game first. Spli
 
 ## Errors
 
+<<<<<<< HEAD
 - `404` — username doesn't exist; tell the user and ask them to double check it.
+=======
+- `404` — most likely `LICHESS_API_TOKEN` is unset or invalid (see above), not necessarily a bad username. Only conclude the username is wrong after confirming the token is set.
+>>>>>>> origin/worktree-dazzling-wishing-harbor
 - `429` — rate limited; wait roughly a minute before retrying, don't hammer it.
 - Any other non-2xx — surface the status code and move on; don't retry silently.
 
