@@ -20,7 +20,9 @@ inventing evaluations, which is the one unforgivable error here.
 **1. Find the story before writing anything.** Read the sweep and ask what single habit connects
 the worst moves. A review that lists five unrelated errors teaches nothing; one that shows the
 same mistake recurring in five places changes how someone plays. If the moments genuinely don't
-share a theme, say so plainly rather than inventing one.
+share a theme, say so plainly rather than inventing one. Check `notes/game-log.md` too — a habit
+this game shares with earlier ones is the strongest thesis a page can have, and it belongs in the
+headline rather than buried in the takeaways.
 
 **2. Pick 4–6 moments.** Include the ones that *teach*, not just the ones that lose the most.
 A near-miss where the opponent failed to punish is often more instructive than the final blunder,

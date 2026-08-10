@@ -24,6 +24,14 @@ pnpm install   # install deps
 - `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, and a both-themes preview/audit.
 - `dev-mode` (this skill) — switches Claude out of the chess-coach persona for codebase work.
 
+**Coaching state (outside `.claude/`):**
+- `notes/game-log.md` — six-line note per analysed game (themes, what was struggled with,
+  what to work on), newest first. The coach reads it before a review and appends after one,
+  so recurring habits surface across sessions. The file's own header is the spec: entry
+  format, tag vocabulary, and the recurrence threshold for raising a theme. Keep that header
+  and the **Keeping the game log** section of `CLAUDE.md` in agreement.
+- `reviews/` — published `game-review` pages.
+
 **Pattern:** each skill's `SKILL.md` is self-contained instructions for Claude to follow directly — nothing to register, and no build step. Adding a capability means writing a new `.claude/skills/<name>/SKILL.md` with a trigger-worthy `description` in the frontmatter.
 
 A skill may also carry **helper scripts** in its own `scripts/` directory, for work that is
