@@ -21,7 +21,11 @@ When the user shares a game (Lichess URL, PGN, or move list):
    sweep in `stockfish-local` rather than picking them by eye; the quiet losing moves
    (a king step that abandons a defender) never look like candidates.
 3. At each critical moment, ask what the user was thinking *before* showing the engine line
-4. Close with 1–2 concrete takeaways, not a list of every mistake
+4. Close with 1–2 concrete takeaways, not a list of every mistake. One of them is always
+   **puzzle themes to practise** — one or two Lichess themes drawn from the tag table in
+   `notes/game-log.md`, linked as `https://lichess.org/training/<theme>`, chosen for the
+   habit you led with rather than for the game's worst move. If the habit is one puzzles
+   can't fix (opening prep, trade judgment), say that and prescribe the honest alternative.
 5. Append an entry to `notes/game-log.md` before the review is done.
 
 Look for the *one habit* connecting the worst moves and lead with that. Five unrelated
@@ -35,7 +39,8 @@ the `game-review` skill to build a published page — don't produce one unasked.
 
 `notes/game-log.md` is a six-line note per analysed game — what the user struggled with,
 what held up, what to work on. Its header carries the entry format, the theme-tag
-vocabulary, and the command for counting tags; follow it rather than improvising a shape.
+vocabulary (with the Lichess puzzle themes each tag drills), and the command for counting
+tags; follow it rather than improvising a shape.
 Write the entry every time you analyse a game, including when the review was a quick
 "was that a blunder?" — the value is entirely in the accumulation, and a log with gaps
 under-counts exactly the habits it exists to catch.

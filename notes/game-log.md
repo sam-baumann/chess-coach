@@ -34,10 +34,46 @@ Keep it to those six lines. The full analysis lives in the conversation or in a
 
 ## Tag vocabulary
 
-`king-safety` · `loose-pieces` · `hanging-material` · `calculation-depth` ·
-`missed-tactic` · `opening-prep` · `pawn-structure` · `piece-activity` ·
-`endgame-technique` · `converting-won-positions` · `time-pressure` ·
-`premature-attack` · `passive-defence` · `trade-decisions` · `prophylaxis`
+Each tag carries the Lichess puzzle themes that drill it, so a review can end with
+something the user can actually go and do. Train a theme at
+`https://lichess.org/training/<theme>` — the theme key goes in the URL verbatim.
+
+| Tag | Puzzle themes to practise |
+|---|---|
+| `king-safety` | `exposedKing`, `kingsideAttack`, `defensiveMove` |
+| `loose-pieces` | `hangingPiece`, `fork`, `trappedPiece` |
+| `hanging-material` | `hangingPiece`, `capturingDefender` |
+| `calculation-depth` | `long`, `mateIn3`, `quietMove` |
+| `missed-tactic` | `fork`, `pin`, `skewer`, `discoveredAttack` |
+| `opening-prep` | — not a puzzle problem |
+| `pawn-structure` | `advancedPawn`, `promotion`, `pawnEndgame` |
+| `piece-activity` | `trappedPiece`, `quietMove` |
+| `endgame-technique` | `endgame`, `rookEndgame`, `pawnEndgame` |
+| `converting-won-positions` | `crushing`, `advantage` |
+| `time-pressure` | `oneMove`, `short` (or Puzzle Storm) |
+| `premature-attack` | `defensiveMove`, `quietMove` |
+| `passive-defence` | `defensiveMove`, `intermezzo` |
+| `trade-decisions` | `capturingDefender` (partial — see below) |
+| `prophylaxis` | `quietMove`, `defensiveMove` |
+
+Two rules when prescribing from this table:
+
+- **Prescribe at most two themes.** "Do `fork` and `hangingPiece` for a week" gets done;
+  a list of six is a reading exercise, not a training plan.
+- **Some tags don't drill.** `opening-prep` has no puzzle theme, and `pawn-structure` or
+  `trade-decisions` only half-map. Prescribe the honest thing (a line to look up, a
+  position to play out) rather than reaching for a theme that nearly fits.
+
+When a new tag is added above, give it a puzzle theme here or an explicit `—`. Check the
+key against the live list first:
+
+```bash
+curl -sL https://lichess.org/training/themes \
+  | grep -o 'href="/training/[A-Za-z0-9]*"' | sed 's|.*/training/||;s|"||' | sort -u
+```
+
+A key that isn't a real theme doesn't 404 — Lichess quietly serves generic puzzles
+instead, so a typo looks like it worked and the user drills the wrong thing.
 
 ## Reading the log for themes
 

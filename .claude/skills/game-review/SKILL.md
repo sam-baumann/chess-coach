@@ -42,7 +42,7 @@ and a move where two natural-looking options differ by one square is the most in
 | `{{TRACE_SVG}}` | output of `scripts/eval_trace.py` |
 | `{{THESIS}}` | opening prose; give the first `<p>` `class="lede"` |
 | `{{MOMENTS}}` | one moment block each — the commented template is at the foot of `template.html` |
-| `{{TAKEAWAYS}}` | 2 `.card`s and optionally one `.drill` |
+| `{{TAKEAWAYS}}` | 2 `.card`s, then the `.drill` — puzzle themes to practise (required) |
 | `{{FOOTER_LEFT}}` | analysis provenance, e.g. `Stockfish 18 · depth 20–22 · MultiPV 3` |
 | `{{FOOTER_RIGHT}}` | link text for the game, e.g. `lichess.org/<gameId>` |
 
@@ -69,6 +69,15 @@ and keep the same file path when updating so the URL is stable.
   engine dump.
 - **One theme, carried through.** The headline, the thesis, and the takeaways should all be the
   same idea at different magnifications.
+- **End with something to go and do.** The `.drill` block prescribes one or two Lichess puzzle
+  themes, taken from the tag table in `notes/game-log.md` and linked as
+  `https://lichess.org/training/<theme>`. Pick for the habit in the headline, not for the
+  single worst move — the page's whole argument is that the habit is the problem. Two themes
+  maximum; a list of six is reading, not training. Never invent a theme key: an unrecognised
+  one silently serves generic puzzles instead of 404ing, so check it against the table (which
+  carries the command for refreshing itself from Lichess). If the habit is one puzzles can't
+  fix — opening prep, trade judgment — say so in the drill and prescribe the honest
+  alternative rather than a theme that nearly fits.
 - **Link every diagram into the game** at the ply *before* the move (`lichess.org/<id>#<ply-1>`),
   so the reader arrives with the decision still open and can try their answer.
 - **Name the blunder, then reframe it.** "You had the right idea; `Kf1` keeps it" beats "`Kh2`
