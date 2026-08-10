@@ -177,6 +177,15 @@ summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px; borde
 .drill{margin-top:34px; padding:22px 24px; border:1px solid var(--accent); border-radius:2px; background:var(--accent-soft)}
 .drill h4{margin:0 0 8px; font-size:17px}
 .drill p{margin:0; color:var(--ink-2); font-size:15.5px}
+/* Puzzle themes are links out to Lichess training, set as chips so they read as
+   things to click, not as prose. Keep it to one or two. */
+.themes{list-style:none; display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 0; padding:0}
+.themes a{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
+  display:inline-block; padding:6px 11px; border:1px solid var(--accent); border-radius:2px;
+  color:var(--accent); text-decoration:none; background:var(--surface);
+}
+.themes a:hover{background:var(--accent); color:var(--surface)}
 footer{margin-top:56px; padding:22px 0 60px; border-top:1px solid var(--rule); font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--ink-3); display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
 </style>
@@ -287,4 +296,26 @@ answer before the line is revealed. Do not flatten it into plain prose.
 
 The Lichess fragment is the ply BEFORE the move under discussion, so the reader
 lands on the decision with the choice still open.
+============================================================================ -->
+
+<!-- ===========================================================================
+DRILL BLOCK — closes {{TAKEAWAYS}}, after the two .cards. Required.
+
+Prescribes the puzzle themes that drill the habit in the headline. Theme keys come
+from the tag table in notes/game-log.md; an unrecognised key does NOT 404, it
+quietly serves generic puzzles, so never write one from memory. Two themes maximum.
+
+<div class="drill">
+  <h4>Drill this week</h4>
+  <p>Both losses started the same way — a piece left defended by one thing. These two
+  themes put you in that position on purpose, a hundred times.</p>
+  <ul class="themes">
+    <li><a href="https://lichess.org/training/hangingPiece" target="_blank" rel="noopener">hangingPiece &#8599;</a></li>
+    <li><a href="https://lichess.org/training/capturingDefender" target="_blank" rel="noopener">capturingDefender &#8599;</a></li>
+  </ul>
+</div>
+
+When the habit isn't puzzle-shaped (opening prep, trade judgment), keep the block and
+prescribe the honest thing instead — a line to look up, a position to play out — rather
+than linking a theme that only nearly fits.
 ============================================================================ -->
