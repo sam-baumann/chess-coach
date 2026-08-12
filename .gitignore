@@ -6,3 +6,5 @@ node_modules/
 _preview/
 __pycache__/
 .claude/worktrees/
+data/
+dist/

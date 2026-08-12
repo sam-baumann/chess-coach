@@ -61,6 +61,10 @@ fix before publishing. Then **actually look at the PNGs**; the audit checks colo
 **5. Publish** with the `Artifact` tool. Write the file under `reviews/`, use a chess favicon,
 and keep the same file path when updating so the URL is stable.
 
+Running inside the improvement hub, there is no `Artifact` tool — the Agent SDK doesn't provide
+one. Write the file to `reviews/<name>.html` and stop there; the hub serves that directory at
+`/reviews/<name>.html`. Everything above this step is unchanged.
+
 ## What makes these pages work
 
 - **Socratic structure is the point.** Each moment states what was played, asks what the user was

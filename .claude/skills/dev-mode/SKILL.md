@@ -7,13 +7,24 @@ You are now in **developer mode**. Set aside the chess coach persona and help th
 
 ## Project
 
-The chess coach is powered by Claude Code **skills**, not a running server — Claude calls `curl` and `stockfish` directly via Bash at runtime, following instructions in each skill's `SKILL.md`. There is a TypeScript scaffold (`package.json`, `tsconfig.json`, `eslint.config.js`, `pnpm-lock.yaml`) kept in the repo for a possible future frontend, but nothing currently runs it — there's no entry point.
+Two surfaces over one set of skills.
+
+**In a Claude Code session**, the coach is powered by the **skills** alone — no server: Claude
+calls `curl` and `stockfish` directly via Bash, following each skill's `SKILL.md`.
+
+**In the hub** (`src/`), a local web app wraps the same skills. Its backend embeds the Claude
+Agent SDK, which loads `.claude/skills/` straight off the filesystem, so the skills and
+`CLAUDE.md` drive the review there too — nothing is reimplemented. See **The hub** below.
 
 ## Commands
 
 ```bash
-pnpm eslint    # lint (once there's TS to lint)
-pnpm install   # install deps
+pnpm install     # install deps
+pnpm dev         # hub: Fastify on :3001 + Vite on :5173
+pnpm build       # build the SPA into dist/web (then :3001 serves it too)
+pnpm typecheck   # both tsconfig projects
+pnpm lint        # eslint
+pnpm test        # node:test — game-log parser + recurrence rule
 ```
 
 ## Architecture
@@ -33,6 +44,49 @@ pnpm install   # install deps
 - `reviews/` — published `game-review` pages.
 
 **Pattern:** each skill's `SKILL.md` is self-contained instructions for Claude to follow directly — nothing to register, and no build step. Adding a capability means writing a new `.claude/skills/<name>/SKILL.md` with a trigger-worthy `description` in the frontmatter.
+
+## The hub (`src/`)
+
+A local, single-user web app: browse recent games, watch an engine sweep run, review a game in
+a streaming chat, and see which habits recur across the log.
+
+```
+src/shared/events.ts   wire types shared by both sides
+src/server/            Fastify API (config, db, gamelog, lichess, sweep, agent, render, routes)
+src/web/               React + Vite SPA
+data/                  gitignored — hub.db and sweeps/<gameId>.json
+```
+
+**The division of labour is the design.** Deterministic work is plain code; only judgment goes
+to the agent. Fetching Lichess games is a `fetch()` in `lichess.ts`; the whole-game sweep is a
+spawned `scan_game.py` in `sweep.ts` (minutes long, so it needs a progress bar rather than an
+opaque tool call); parsing the log is `gamelog.ts`. The agent picks the critical moments, asks
+the Socratic questions, finds the one habit, and writes the log entry — and it still gets Bash
+and the skills, so it runs `probe_moments.py` at depth on the plies it chooses.
+
+**`agent.ts` is the integration point.** `query()` runs with `cwd` at the repo root and
+`settingSources: ['user', 'project']` — that is what loads `.claude/skills/` and `CLAUDE.md`.
+Setting `settingSources: []` would silently disable both and leave a generic assistant. One
+long-lived `Query` per review, fed by a push queue so follow-up turns don't re-pay startup;
+the agent's own session id is persisted so a restart can `resume`. The ~35-member `SDKMessage`
+union is narrowed to the handful of events in `src/shared/events.ts` — the browser never sees
+SDK types. Tool events are part of that vocabulary on purpose: without them a two-minute
+engine probe is indistinguishable from a hang.
+
+**SQLite is derived, never canonical.** `notes/game-log.md` stays the source of truth for
+coaching state — the agent writes it, `gamelog.ts` reparses it on `fs.watch`, and the `log_*`
+tables are rebuilt wholesale. The app never writes markdown back. If the hub ever seems to
+want the log in a different shape, that's a signal the hub is wrong, not the log. Two parser
+details carry real weight and are covered by tests: everything before the
+`<!-- Entries below` marker is skipped (the header holds an example entry and the whole tag
+vocabulary — counting either corrupts every statistic), and the recurrence rule is the log's
+own (three-plus games, or two of the last three) rather than "most common tag so far".
+
+**Board diagrams and the eval trace shell out to the `game-review` scripts** rather than being
+rebuilt in React — `render_board.py` and `eval_trace.py` already encode the solid-glyph,
+square-parity, and diverging-fill decisions. `src/web/theme.css` lifts the palette from
+`game-review/template.html` verbatim, all three blocks, so the app and the published pages
+match; dropping the un-stamped `prefers-color-scheme` block is the regression to watch for.
 
 A skill may also carry **helper scripts** in its own `scripts/` directory, for work that is
 slow, fiddly, or easy to get subtly wrong when re-derived from prose each time (engine
