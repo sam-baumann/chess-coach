@@ -73,9 +73,18 @@ export interface Trends {
     count: number;
     reason: "three-or-more" | "two-of-last-three";
     puzzleThemes: string[];
+    /**
+     * False when the tag is absent from the header's vocabulary table — almost
+     * always a typo. Without this an unknown tag is indistinguishable from one
+     * the header deliberately marks "—", and the UI would tell the user puzzles
+     * can't help when the correctly-spelled tag has drills.
+     */
+    knownTag: boolean;
   } | null;
   ratingSeries: { playedAt: number; rating: number; speed: string }[];
   entryCount: number;
+  /** Tags used in entries but missing from the vocabulary table. */
+  unknownTags: string[];
 }
 
 /** Events pushed over SSE while a sweep runs. */

@@ -112,10 +112,25 @@ export function TrendsPanel() {
     </div>
   );
 
+  const unknownNotice = trends.unknownTags.length > 0 && (
+    <div className="card notice" style={{ gridColumn: "1 / -1" }}>
+      <strong className="err">
+        {trends.unknownTags.length} tag{trends.unknownTags.length === 1 ? "" : "s"} not in the
+        vocabulary
+      </strong>
+      <p className="muted" style={{ margin: "6px 0 0" }}>
+        <span className="mono">{trends.unknownTags.join(", ")}</span> — these don&rsquo;t appear in
+        the table in <code>notes/game-log.md</code>, so they carry no drill themes and a
+        near-synonym splits one habit&rsquo;s count across two names.
+      </p>
+    </div>
+  );
+
   if (trends.entryCount === 0) {
     return (
       <div className="trend-grid">
         {skippedNotice}
+        {unknownNotice}
         <div className="card" style={{ gridColumn: "1 / -1" }}>
           <h2>Nothing logged yet</h2>
           <p className="muted" style={{ marginBottom: 0 }}>
@@ -133,6 +148,7 @@ export function TrendsPanel() {
   return (
     <div className="trend-grid">
       {skippedNotice}
+      {unknownNotice}
       {/* The log's own rule: raise a theme at three-plus games, or two of the last
           three. Below that, naming a pattern invents one — so this renders
           nothing rather than "your most common tag so far". */}
@@ -153,9 +169,17 @@ export function TrendsPanel() {
                 </a>
               ))}
             </div>
-          ) : (
+          ) : trends.recurring.knownTag ? (
             <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
               Puzzles can&rsquo;t fix this one — it needs study away from the tactics trainer.
+            </p>
+          ) : (
+            // Not the same thing as an explicit "—" in the vocabulary table: an
+            // unrecognised tag has no drills because it is misspelt.
+            <p className="err" style={{ fontSize: 13, marginBottom: 0 }}>
+              <code>{trends.recurring.tag}</code> isn&rsquo;t in the vocabulary table in{" "}
+              <code>notes/game-log.md</code>, so it has no drills. Check the spelling — a
+              near-synonym tag hides the recurrence it&rsquo;s meant to reveal.
             </p>
           )}
         </div>

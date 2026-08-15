@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  type CanUseTool,
+  type Query,
+  type SDKMessage,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { Game, ReviewEvent, ReviewMessage, ReviewSession } from "../shared/events.ts";
 import { REPO_ROOT } from "./config.ts";
 import { getDb } from "./db.ts";
@@ -33,8 +39,33 @@ const ALLOWED_TOOLS = [
   "WebFetch",
 ];
 
-/** A blunt guard against the obvious footguns; this is a local single-user app. */
-const DISALLOWED_TOOLS = ["Bash(rm -rf *)", "Bash(git push *)", "Bash(sudo *)"];
+/**
+ * A blunt guard against the obvious footguns; this is a local single-user app.
+ *
+ * It has to be a `canUseTool` callback, not `disallowedTools`: that option takes
+ * tool *names* and removes them wholesale, so entries like "Bash(rm -rf *)"
+ * match nothing and silently guarantee nothing. `permissionMode: "dontAsk"` with
+ * bare "Bash" allowed pre-approves every command, so this is the only hook left.
+ */
+const BLOCKED_COMMANDS: { pattern: RegExp; why: string }[] = [
+  { pattern: /\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rR]/, why: "recursive delete" },
+  { pattern: /\bsudo\b/, why: "sudo" },
+  { pattern: /\bgit\s+(-\S+\s+)*push\b/, why: "git push" },
+];
+
+const canUseTool: CanUseTool = async (toolName, input) => {
+  if (toolName !== "Bash") return { behavior: "allow", updatedInput: input };
+  const command = typeof input.command === "string" ? input.command : "";
+  for (const { pattern, why } of BLOCKED_COMMANDS) {
+    if (pattern.test(command)) {
+      return {
+        behavior: "deny",
+        message: `Blocked by the hub: ${why} is not available in a review session.`,
+      };
+    }
+  }
+  return { behavior: "allow", updatedInput: input };
+};
 
 function hubContext(game: Game, scanRelPath: string | null): string {
   const lines = [
@@ -237,18 +268,23 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
   if (msg.type === "assistant") {
     const sameMessage = msg.message.id === session.streamMessageId;
     for (const [i, block] of msg.message.content.entries()) {
-      if (block.type === "text" && block.text.trim()) {
+      if (block.type === "text") {
         // Resolve the block's *stream* index, so the complete text replaces the
-        // deltas in place instead of appending a duplicate bubble.
+        // deltas in place instead of appending a duplicate bubble. The cursor
+        // advances for every text block, empty ones included — content_block_start
+        // recorded those too, and skipping them here would shift each later block
+        // onto the wrong index.
         const streamIndex = sameMessage
           ? (session.textBlockIndexes[session.textBlockCursor++] ?? i)
           : i;
-        events.push({
-          type: "assistant_text",
-          blockId: `${msg.message.id}:${streamIndex}`,
-          text: block.text,
-        });
-        appendMessage(session.id, "assistant", block.text);
+        if (block.text.trim()) {
+          events.push({
+            type: "assistant_text",
+            blockId: `${msg.message.id}:${streamIndex}`,
+            text: block.text,
+          });
+          appendMessage(session.id, "assistant", block.text);
+        }
       }
       if (block.type === "tool_use") {
         events.push({
@@ -394,7 +430,7 @@ export function attach(sessionId: string, game: Game): EventEmitter {
       model: process.env.HUB_MODEL ?? "claude-opus-5",
       permissionMode: "dontAsk",
       allowedTools: ALLOWED_TOOLS,
-      disallowedTools: DISALLOWED_TOOLS,
+      canUseTool,
       includePartialMessages: true,
       systemPrompt: {
         type: "preset",

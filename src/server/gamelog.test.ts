@@ -6,16 +6,37 @@ import { GAME_LOG_PATH } from "./config.ts";
 
 const realLog = readFileSync(GAME_LOG_PATH, "utf8");
 
+/**
+ * The real header, up to and including the entries marker, with whatever entries
+ * have accumulated below it dropped.
+ *
+ * These tests are about the *format*, so they must keep exercising the real
+ * header — it is the spec, and a drift there is exactly what would break the
+ * parser. But they cannot depend on the log's contents: the coach appends an
+ * entry after every review, so asserting against the live file would fail the
+ * first time the app is used for its purpose.
+ */
+const MARKER_LINE = realLog.split("\n").find((l) => l.trimStart().startsWith("<!-- Entries below"));
+const realHeader = MARKER_LINE
+  ? realLog.slice(0, realLog.indexOf(MARKER_LINE) + MARKER_LINE.length)
+  : realLog;
+
+test("the log still carries its entries marker", () => {
+  // Everything below depends on this cut existing; without it the parser would
+  // treat the header's example entry as a real game.
+  assert.ok(MARKER_LINE, "notes/game-log.md must keep its '<!-- Entries below' marker");
+});
+
 test("the header contributes no entries", () => {
   // The header carries an example entry inside a fenced block and a full tag
   // vocabulary table. Counting either would inflate every statistic the log
   // exists to produce, so the parser must cut at the entries marker.
-  const { entries } = parseGameLog(realLog);
-  assert.equal(entries.length, 0, "current log has no entries below the marker");
+  const { entries } = parseGameLog(realHeader);
+  assert.equal(entries.length, 0, "nothing above the marker is an entry");
 });
 
 test("the tag vocabulary parses out of the header", () => {
-  const vocab = parseVocab(realLog);
+  const vocab = parseVocab(realHeader);
   const tags = vocab.map((v) => v.tag);
   assert.ok(tags.includes("king-safety"));
   assert.ok(tags.includes("opening-prep"));
@@ -35,7 +56,7 @@ test("the tag vocabulary parses out of the header", () => {
 });
 
 test("a game entry parses into its six fields", () => {
-  const log = `${realLog}
+  const log = `${realHeader}
 ## 2026-08-11 · black vs magnusfan99 (1480) · Ponziani Opening · loss
 Game: https://lichess.org/abcd1234
 Themes: king-safety, calculation-depth
@@ -61,7 +82,7 @@ Work on: before a king move, ask which file it opens.
 });
 
 test("the player-review heading variant is recognised", () => {
-  const log = `${realLog}
+  const log = `${realHeader}
 ## 2026-08-10 · player review · 12 games
 Game: https://lichess.org/a, https://lichess.org/b
 Themes: loose-pieces
@@ -77,7 +98,7 @@ Work on: a blunder-check habit before every capture.
 });
 
 test("newest-first ordering is preserved and bad headings are dropped", () => {
-  const log = `${realLog}
+  const log = `${realHeader}
 ## 2026-08-11 · white vs alice (1500) · Italian Game · win
 Themes: piece-activity
 
@@ -98,7 +119,7 @@ Themes: passive-defence
 test("a dropped heading is reported, not silently swallowed", () => {
   // Entries are agent-written, so formatting drift is the likely cause of a drop.
   // Without this the agent can report "logged" while Trends never sees the entry.
-  const log = `${realLog}
+  const log = `${realHeader}
 ## 2026-08-11 - white vs alice (1500) - Italian Game - win
 Themes: piece-activity
 `;
@@ -163,6 +184,17 @@ test("a qualifying tag with no drillable themes still surfaces", () => {
   const r = pickRecurring(entries, VOCAB);
   assert.equal(r?.tag, "opening-prep");
   assert.deepEqual(r?.puzzleThemes, [], "the UI must offer study, not a near-fitting puzzle theme");
+  assert.equal(r?.knownTag, true, "an explicit '—' row is in the vocabulary");
+});
+
+test("an unknown tag is distinguishable from one with no drills", () => {
+  // Both have zero puzzle themes, but only one means "puzzles can't fix this".
+  // A misspelt tag telling the user to study instead would hide a fixable habit.
+  const entries = [e("kingsafety"), e("kingsafety"), e("kingsafety")];
+  const r = pickRecurring(entries, VOCAB);
+  assert.equal(r?.tag, "kingsafety");
+  assert.deepEqual(r?.puzzleThemes, []);
+  assert.equal(r?.knownTag, false);
 });
 
 test("a tag repeated within one entry counts once", () => {

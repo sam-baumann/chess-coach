@@ -129,9 +129,13 @@ export function registerRoutes(app: FastifyInstance): void {
     const game = getGame(session.gameId);
     if (!game) return reply.code(404).send({ error: "Unknown game" });
 
-    const channel = openSse<ReviewEvent>(req, reply);
+    // attach() before openSse(): it reads the DB and constructs the SDK query, and
+    // if that throws after the 200 headers are on the wire Fastify's error handler
+    // dies with ERR_HTTP_HEADERS_SENT — leaving the browser on an open stream that
+    // never sends and never errors, so the chat waits forever.
     const bus = attach(session.id, game);
     cancelScheduledClose(session.id);
+    const channel = openSse<ReviewEvent>(req, reply);
     const onEvent = (event: ReviewEvent) => channel.send(event);
     bus.on("event", onEvent);
     req.raw.on("close", () => {

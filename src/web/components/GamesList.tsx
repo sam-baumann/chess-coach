@@ -72,8 +72,10 @@ export function GamesList({
       .catch((err: Error) => setError({ message: err.message }));
   }, []);
 
+  // Seed only while the field is untouched. /api/health awaits a stockfish probe,
+  // so it can land after the user has started typing a different name.
   useEffect(() => {
-    if (health?.username) setUsername(health.username);
+    if (health?.username) setUsername((current) => current || health.username!);
   }, [health?.username]);
 
   // Sweeps run for minutes in a child process; this keeps the badges live

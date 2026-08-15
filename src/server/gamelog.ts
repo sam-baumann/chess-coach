@@ -275,16 +275,23 @@ export function watchGameLog(onRebuild?: () => void): void {
    * goes silent — Trends would stop updating for the life of the process after a
    * single hand-edit, with no signal.
    */
-  const arm = () => {
+  const arm = (attempt = 0) => {
     try {
       watcher = watch(GAME_LOG_PATH, (eventType) => {
         rebuild();
         if (eventType !== "rename") return;
         watcher?.close();
-        setTimeout(arm, 50);
+        setTimeout(() => arm(), 50);
       });
     } catch (err) {
-      console.error("[gamelog] cannot watch", GAME_LOG_PATH, err);
+      // A save that unlinks then recreates makes this throw ENOENT while the
+      // file is briefly absent. Giving up on the first failure would leave the
+      // watch dead for the process lifetime — the very thing re-arming prevents.
+      if (attempt < 10) {
+        setTimeout(() => arm(attempt + 1), 100 * (attempt + 1));
+        return;
+      }
+      console.error("[gamelog] gave up watching", GAME_LOG_PATH, err);
     }
   };
 
@@ -361,16 +368,26 @@ export function pickRecurring(
 ): Trends["recurring"] {
   const themeCounts = countThemes(entries);
 
+  const found = (
+    tag: string,
+    count: number,
+    reason: "three-or-more" | "two-of-last-three",
+  ): Trends["recurring"] => ({
+    tag,
+    count,
+    reason,
+    puzzleThemes: vocab.get(tag) ?? [],
+    knownTag: vocab.has(tag),
+  });
+
   for (const { tag, count } of themeCounts) {
-    if (count >= 3) {
-      return { tag, count, reason: "three-or-more", puzzleThemes: vocab.get(tag) ?? [] };
-    }
+    if (count >= 3) return found(tag, count, "three-or-more");
   }
 
   const recent = countThemes(entries.slice(0, 3));
   for (const { tag, count } of themeCounts) {
     if ((recent.find((r) => r.tag === tag)?.count ?? 0) >= 2) {
-      return { tag, count, reason: "two-of-last-three", puzzleThemes: vocab.get(tag) ?? [] };
+      return found(tag, count, "two-of-last-three");
     }
   }
 
@@ -395,5 +412,9 @@ export function computeTrends(): Trends {
       .all() as { played_at: number; speed: string; rating: number }[]
   ).map((r) => ({ playedAt: r.played_at, rating: r.rating, speed: r.speed }));
 
-  return { themeCounts, recurring, ratingSeries, entryCount: entries.length };
+  // A tag not in the header's table is almost always a typo, and it silently
+  // splits a habit's count in two — the thing the log exists to detect.
+  const unknownTags = themeCounts.map((t) => t.tag).filter((tag) => !vocab.has(tag));
+
+  return { themeCounts, recurring, ratingSeries, entryCount: entries.length, unknownTags };
 }
