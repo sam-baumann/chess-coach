@@ -33,10 +33,19 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post<{ Body: { username?: string; max?: number; perfType?: string; rated?: boolean } }>(
     "/api/games/refresh",
     async (req, reply) => {
-      const username = req.body?.username ?? storedUsername();
+      const stored = storedUsername();
+      const username = req.body?.username ?? stored;
       if (!username) {
         return reply.code(400).send({
           error: "No Lichess username. Pass one, or save yours to .claude/lichess-user.local.md.",
+        });
+      }
+      // The games table holds one player's games — user_color is computed per
+      // fetch, so importing someone else's would rewrite the overlapping rows to
+      // their perspective and mix two players' ratings into one trend line.
+      if (stored && username.toLowerCase() !== stored.toLowerCase()) {
+        return reply.code(400).send({
+          error: `This hub tracks ${stored}'s games. To follow a different player, change .claude/lichess-user.local.md and restart.`,
         });
       }
       try {

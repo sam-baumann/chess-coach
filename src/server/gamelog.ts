@@ -1,4 +1,4 @@
-import { readFileSync, watch } from "node:fs";
+import { readFileSync, watch, type FSWatcher } from "node:fs";
 import type { LogEntry, ThemeVocabEntry, Trends } from "../shared/events.ts";
 import { GAME_LOG_PATH } from "./config.ts";
 import { getDb } from "./db.ts";
@@ -253,21 +253,40 @@ export function rebuildIndex(): ParsedLog {
  */
 export function watchGameLog(onRebuild?: () => void): void {
   let timer: NodeJS.Timeout | null = null;
-  try {
-    watch(GAME_LOG_PATH, () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        try {
-          rebuildIndex();
-          onRebuild?.();
-        } catch (err) {
-          console.error("[gamelog] rebuild failed:", err);
-        }
-      }, 150);
-    });
-  } catch (err) {
-    console.error("[gamelog] cannot watch", GAME_LOG_PATH, err);
-  }
+  let watcher: FSWatcher | null = null;
+
+  const rebuild = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      try {
+        rebuildIndex();
+        onRebuild?.();
+      } catch (err) {
+        console.error("[gamelog] rebuild failed:", err);
+      }
+    }, 150);
+  };
+
+  /**
+   * Re-armed on "rename". Atomic-save editors (vim, most GUI editors) replace
+   * the inode rather than writing in place, and a watch bound to the old inode
+   * goes silent — Trends would stop updating for the life of the process after a
+   * single hand-edit, with no signal.
+   */
+  const arm = () => {
+    try {
+      watcher = watch(GAME_LOG_PATH, (eventType) => {
+        rebuild();
+        if (eventType !== "rename") return;
+        watcher?.close();
+        setTimeout(arm, 50);
+      });
+    } catch (err) {
+      console.error("[gamelog] cannot watch", GAME_LOG_PATH, err);
+    }
+  };
+
+  arm();
 }
 
 export function listEntries(): LogEntry[] {

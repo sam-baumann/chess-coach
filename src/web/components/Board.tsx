@@ -30,21 +30,27 @@ export function Board({
     const params = new URLSearchParams({ fen, highlight: highlight.join(","), caption });
     if (flip) params.set("flip", "true");
 
-    fetch(`/api/diagram?${params}`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`diagram failed (${res.status})`);
-        return res.text();
-      })
-      .then((text) => {
-        if (!cancelled) {
-          setHtml(text);
-          setError(null);
-        }
-      })
-      .catch((err: Error) => !cancelled && setError(err.message));
+    // Debounced: every fetch shells out to a Python process server-side, and the
+    // ply slider fires onChange per step — dragging across a game would spawn
+    // dozens of concurrent interpreters for positions nobody stops to look at.
+    const timer = setTimeout(() => {
+      fetch(`/api/diagram?${params}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`diagram failed (${res.status})`);
+          return res.text();
+        })
+        .then((text) => {
+          if (!cancelled) {
+            setHtml(text);
+            setError(null);
+          }
+        })
+        .catch((err: Error) => !cancelled && setError(err.message));
+    }, 80);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
     // highlight is an array literal at most call sites; key on its content.
   }, [fen, flip, caption, highlight.join(",")]);

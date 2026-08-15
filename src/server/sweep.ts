@@ -159,7 +159,13 @@ export async function startSweep(
     emit({ type: "sweep_progress", gameId, progress });
   });
 
+  // A spawn failure emits `error` and *then* `close`. Without this the useful
+  // "is uv installed?" message is immediately overwritten by "exited -2" with an
+  // empty stderr tail — exactly the case the message exists for.
+  let failed = false;
+
   child.on("error", (err) => {
+    failed = true;
     running.delete(gameId);
     const message = `Could not start the sweep: ${err.message}. Is \`uv\` installed?`;
     setStatus(gameId, { status: "failed", progress: 0, error: message, depth });
@@ -168,15 +174,28 @@ export async function startSweep(
 
   child.on("close", (code) => {
     running.delete(gameId);
-    out.end();
-    if (code === 0) {
-      setStatus(gameId, { status: "done", progress: 1, depth });
-      emit({ type: "sweep_done", gameId });
-    } else {
+    if (failed) {
+      out.end();
+      return;
+    }
+    if (code !== 0) {
+      out.end();
       const message = `scan_game.py exited ${code}.\n${stderrTail.trim()}`;
       setStatus(gameId, { status: "failed", error: message, depth });
       emit({ type: "sweep_failed", gameId, error: message });
+      return;
     }
+    // Announce only once the file is actually on disk. The child closing does not
+    // mean the piped write stream has flushed, and a reader reacting to
+    // sweep_done would hit truncated JSON — which readScan turns into a silent null.
+    const announceDone = () => {
+      setStatus(gameId, { status: "done", progress: 1, depth });
+      emit({ type: "sweep_done", gameId });
+    };
+    // pipe() ends `out` itself, so "finish" may already have gone by.
+    if (out.writableFinished) announceDone();
+    else out.once("finish", announceDone);
+    out.end();
   });
 
   return { status: "started" };

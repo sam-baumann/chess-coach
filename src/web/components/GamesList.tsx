@@ -153,7 +153,10 @@ export function GamesList({
               const badge = resultBadge(g);
               const opponent =
                 g.userColor === "white" ? g.black : g.userColor === "black" ? g.white : `${g.white} / ${g.black}`;
-              const oppRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+              // Null userColor means neither player is the hub's user, so there
+              // is no "opponent" rating to show — the cell names both players.
+              const oppRating =
+                g.userColor === "white" ? g.blackRating : g.userColor === "black" ? g.whiteRating : null;
               return (
                 <tr key={g.id} onClick={() => onOpen(g.id)}>
                   <td className="num">{new Date(g.playedAt).toLocaleDateString()}</td>

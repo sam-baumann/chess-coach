@@ -6,7 +6,7 @@ import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthro
 import type { Game, ReviewEvent, ReviewMessage, ReviewSession } from "../shared/events.ts";
 import { REPO_ROOT } from "./config.ts";
 import { getDb } from "./db.ts";
-import { PROBE_SCRIPT, scanPath } from "./sweep.ts";
+import { PROBE_SCRIPT, scanPath, sweepStatus } from "./sweep.ts";
 
 /**
  * The agent side of the hub.
@@ -98,6 +98,8 @@ interface LiveSession {
   id: string;
   q: Query;
   push: (text: string) => void;
+  /** Ends the push generator; without it the iterator parks on a promise forever. */
+  closeQueue: () => void;
   bus: EventEmitter;
   agentSessionId: string | null;
   /**
@@ -106,6 +108,14 @@ interface LiveSession {
    * only `message_start` names it, and the final `assistant` message repeats it.
    */
   streamMessageId: string | null;
+  /**
+   * Stream indexes of this message's text blocks, in order, and how many the
+   * `assistant` messages have consumed. The CLI splits one API message into one
+   * `assistant` message per content block, each holding a single block — so the
+   * array position there is always 0 and cannot be used to match the deltas.
+   */
+  textBlockIndexes: number[];
+  textBlockCursor: number;
 }
 
 const live = new Map<string, LiveSession>();
@@ -199,7 +209,12 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
     const ev = msg.event;
     if (ev.type === "message_start") {
       session.streamMessageId = ev.message.id;
+      session.textBlockIndexes = [];
+      session.textBlockCursor = 0;
       return events;
+    }
+    if (ev.type === "content_block_start" && ev.content_block.type === "text") {
+      session.textBlockIndexes.push(ev.index);
     }
     // Keyed by the API message id, not msg.uuid: every stream_event has its own
     // uuid, so uuid-keyed deltas would each open a new bubble and the final
@@ -215,10 +230,19 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
   }
 
   if (msg.type === "assistant") {
+    const sameMessage = msg.message.id === session.streamMessageId;
     for (const [i, block] of msg.message.content.entries()) {
       if (block.type === "text" && block.text.trim()) {
-        // Same key the deltas used, so the complete block replaces them in place.
-        events.push({ type: "assistant_text", blockId: `${msg.message.id}:${i}`, text: block.text });
+        // Resolve the block's *stream* index, so the complete text replaces the
+        // deltas in place instead of appending a duplicate bubble.
+        const streamIndex = sameMessage
+          ? (session.textBlockIndexes[session.textBlockCursor++] ?? i)
+          : i;
+        events.push({
+          type: "assistant_text",
+          blockId: `${msg.message.id}:${streamIndex}`,
+          text: block.text,
+        });
         appendMessage(session.id, "assistant", block.text);
       }
       if (block.type === "tool_use") {
@@ -344,8 +368,12 @@ export function attach(sessionId: string, game: Game): EventEmitter {
   const stored = getSession(sessionId);
   const queue = messageQueue();
 
+  // The file exists from the moment the sweep *starts* (and survives a failure),
+  // so its presence is not completion. Telling the agent a running sweep is done
+  // has it parse a truncated file.
   const scan = scanPath(game.id);
-  const scanRel = existsSync(scan) ? relative(REPO_ROOT, scan) : null;
+  const scanRel =
+    sweepStatus(game.id)?.status === "done" && existsSync(scan) ? relative(REPO_ROOT, scan) : null;
 
   const q = query({
     prompt: queue.iterable,
@@ -377,9 +405,12 @@ export function attach(sessionId: string, game: Game): EventEmitter {
     id: sessionId,
     q,
     push: queue.push,
+    closeQueue: queue.close,
     bus,
     agentSessionId: stored?.agentSessionId ?? null,
     streamMessageId: null,
+    textBlockIndexes: [],
+    textBlockCursor: 0,
   };
   live.set(sessionId, session);
 
@@ -413,6 +444,7 @@ export function sendUserTurn(sessionId: string, game: Game, text: string): void 
 export function closeSession(sessionId: string): void {
   const s = live.get(sessionId);
   if (s) {
+    s.closeQueue();
     s.q.close();
     live.delete(sessionId);
   }
