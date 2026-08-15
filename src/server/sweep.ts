@@ -67,6 +67,19 @@ function emit(event: SweepEvent): void {
   sweepBus.emit("event", event);
 }
 
+/**
+ * A sweep is a child process, so it dies with the server. Rows left at "running"
+ * have nothing behind them: the UI renders a progress bar for that status and no
+ * event will ever arrive to move it, so the row would sit frozen forever with no
+ * way to restart it. Mark them failed at boot, which restores the sweep button.
+ */
+export function reconcileInterruptedSweeps(): number {
+  const info = getDb()
+    .prepare("UPDATE sweeps SET status = 'failed', error = ? WHERE status = 'running'")
+    .run("The server restarted while this sweep was running. Start it again.");
+  return Number(info.changes);
+}
+
 /** Stockfish is installed by the stockfish-local skill; say so rather than failing opaquely. */
 export function stockfishMissingHelp(): string {
   return [

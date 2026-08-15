@@ -100,9 +100,33 @@ interface LiveSession {
   push: (text: string) => void;
   bus: EventEmitter;
   agentSessionId: string | null;
+  /**
+   * The API message id of the turn currently streaming. `stream_event` carries a
+   * fresh uuid per event, so it cannot identify the message a delta belongs to;
+   * only `message_start` names it, and the final `assistant` message repeats it.
+   */
+  streamMessageId: string | null;
 }
 
 const live = new Map<string, LiveSession>();
+
+/**
+ * Buses outlive the agent query deliberately. A query ends on any SDK error or
+ * agent exit, but the browser's EventSource stays open — if the next turn built
+ * a fresh emitter, the reattached agent would talk to nobody and the chat would
+ * sit on "thinking…" until a reload.
+ */
+const buses = new Map<string, EventEmitter>();
+
+function busFor(sessionId: string): EventEmitter {
+  const existing = buses.get(sessionId);
+  if (existing) return existing;
+  const bus = new EventEmitter();
+  // Many browser tabs plus the abort listener; the default cap of 10 is low.
+  bus.setMaxListeners(50);
+  buses.set(sessionId, bus);
+  return bus;
+}
 
 /** An async iterable the HTTP layer can push user turns into. */
 function messageQueue(): {
@@ -173,15 +197,19 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
 
   if (msg.type === "stream_event") {
     const ev = msg.event;
+    if (ev.type === "message_start") {
+      session.streamMessageId = ev.message.id;
+      return events;
+    }
+    // Keyed by the API message id, not msg.uuid: every stream_event has its own
+    // uuid, so uuid-keyed deltas would each open a new bubble and the final
+    // assistant_text could never supersede them.
+    const blockId = `${session.streamMessageId ?? msg.session_id}:${"index" in ev ? ev.index : 0}`;
     if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-      events.push({
-        type: "assistant_delta",
-        blockId: `${msg.uuid}:${ev.index}`,
-        text: ev.delta.text,
-      });
+      events.push({ type: "assistant_delta", blockId, text: ev.delta.text });
     }
     if (ev.type === "content_block_start" && ev.content_block.type === "thinking") {
-      events.push({ type: "thinking", blockId: `${msg.uuid}:${ev.index}` });
+      events.push({ type: "thinking", blockId });
     }
     return events;
   }
@@ -189,7 +217,8 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
   if (msg.type === "assistant") {
     for (const [i, block] of msg.message.content.entries()) {
       if (block.type === "text" && block.text.trim()) {
-        events.push({ type: "assistant_text", blockId: `${msg.uuid}:${i}`, text: block.text });
+        // Same key the deltas used, so the complete block replaces them in place.
+        events.push({ type: "assistant_text", blockId: `${msg.message.id}:${i}`, text: block.text });
         appendMessage(session.id, "assistant", block.text);
       }
       if (block.type === "tool_use") {
@@ -309,14 +338,11 @@ export function listSessionsForGame(gameId: string): ReviewSession[] {
 
 /** Subscribe to a review's event stream, starting the agent process on first use. */
 export function attach(sessionId: string, game: Game): EventEmitter {
-  const existing = live.get(sessionId);
-  if (existing) return existing.bus;
+  const bus = busFor(sessionId);
+  if (live.has(sessionId)) return bus;
 
   const stored = getSession(sessionId);
   const queue = messageQueue();
-  const bus = new EventEmitter();
-  // Many browser tabs plus the abort listener; the default cap of 10 is low.
-  bus.setMaxListeners(50);
 
   const scan = scanPath(game.id);
   const scanRel = existsSync(scan) ? relative(REPO_ROOT, scan) : null;
@@ -353,6 +379,7 @@ export function attach(sessionId: string, game: Game): EventEmitter {
     push: queue.push,
     bus,
     agentSessionId: stored?.agentSessionId ?? null,
+    streamMessageId: null,
   };
   live.set(sessionId, session);
 
@@ -367,7 +394,10 @@ export function attach(sessionId: string, game: Game): EventEmitter {
         message: err instanceof Error ? err.message : String(err),
       } satisfies ReviewEvent);
     } finally {
-      live.delete(sessionId);
+      // Only if this loop still owns the slot: closeSession() may already have
+      // cleared it and a reconnect registered a newer session, which an
+      // unconditional delete would drop — leaving two agents on one review.
+      if (live.get(sessionId) === session) live.delete(sessionId);
     }
   })();
 
@@ -382,9 +412,12 @@ export function sendUserTurn(sessionId: string, game: Game, text: string): void 
 
 export function closeSession(sessionId: string): void {
   const s = live.get(sessionId);
-  if (!s) return;
-  s.q.close();
-  live.delete(sessionId);
+  if (s) {
+    s.q.close();
+    live.delete(sessionId);
+  }
+  // The last viewer has gone, so the bus has no reason to outlive the query.
+  buses.delete(sessionId);
 }
 
 export function closeAllSessions(): void {

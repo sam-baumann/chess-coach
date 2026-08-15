@@ -32,7 +32,14 @@ export function ChatPane({ session }: { session: ReviewSession }) {
       setItems((prev) => reduce(prev, e));
       if (e.type === "session") setSkills(e.skills);
       if (e.type === "thinking") setThinking(true);
-      if (e.type === "assistant_delta" || e.type === "assistant_text" || e.type === "turn_done") {
+      // "error" clears it too: an error is exactly when the agent loop ends, so
+      // leaving the spinner up would pair the ⚠ with a permanent "thinking…".
+      if (
+        e.type === "assistant_delta" ||
+        e.type === "assistant_text" ||
+        e.type === "turn_done" ||
+        e.type === "error"
+      ) {
         setThinking(false);
       }
     });

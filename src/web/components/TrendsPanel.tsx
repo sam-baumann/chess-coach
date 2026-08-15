@@ -2,8 +2,34 @@ import { useEffect, useState } from "react";
 import type { LogEntry, Trends } from "@shared/events.ts";
 import { api } from "../api.ts";
 
-function RatingSpark({ points }: { points: { playedAt: number; rating: number }[] }) {
-  if (points.length < 2) return <p className="muted">Not enough rated games yet.</p>;
+/**
+ * One line per time control. Bullet, blitz and rapid are separate rating pools —
+ * plotted as a single series they produce a saw-tooth that reads as rating swings
+ * the player never had.
+ */
+function RatingSparks({ points }: { points: Trends["ratingSeries"] }) {
+  const bySpeed = new Map<string, Trends["ratingSeries"]>();
+  for (const p of points) {
+    const bucket = bySpeed.get(p.speed);
+    if (bucket) bucket.push(p);
+    else bySpeed.set(p.speed, [p]);
+  }
+  const plottable = [...bySpeed.entries()]
+    .filter(([, ps]) => ps.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length);
+
+  if (plottable.length === 0) return <p className="muted">Not enough rated games yet.</p>;
+
+  return (
+    <>
+      {plottable.map(([speed, ps]) => (
+        <RatingSpark key={speed} speed={speed} points={ps} />
+      ))}
+    </>
+  );
+}
+
+function RatingSpark({ speed, points }: { speed: string; points: { playedAt: number; rating: number }[] }) {
   const w = 280;
   const h = 70;
   const lo = Math.min(...points.map((p) => p.rating));
@@ -19,11 +45,17 @@ function RatingSpark({ points }: { points: { playedAt: number; rating: number }[
 
   return (
     <>
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label={`Rating from ${lo} to ${hi}`}>
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        width="100%"
+        height={h}
+        role="img"
+        aria-label={`${speed} rating from ${lo} to ${hi} over ${points.length} games`}
+      >
         <path d={d} className="tline" />
       </svg>
-      <p className="num" style={{ margin: 0 }}>
-        {lo} – {hi} · {points.length} games
+      <p className="num" style={{ margin: "0 0 10px" }}>
+        {speed} · {lo} – {hi} · {points.length} games
       </p>
     </>
   );
@@ -111,7 +143,7 @@ export function TrendsPanel() {
 
       <div className="card">
         <h2>Rating</h2>
-        <RatingSpark points={trends.ratingSeries} />
+        <RatingSparks points={trends.ratingSeries} />
       </div>
 
       <div className="card" style={{ gridColumn: "1 / -1" }}>

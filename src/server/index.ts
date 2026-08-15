@@ -7,11 +7,12 @@ import { getDb, closeDb } from "./db.ts";
 import { rebuildIndex, watchGameLog } from "./gamelog.ts";
 import { registerRoutes } from "./routes.ts";
 import { closeAllSessions } from "./agent.ts";
-import { checkStockfish } from "./sweep.ts";
+import { checkStockfish, reconcileInterruptedSweeps } from "./sweep.ts";
 
 async function main(): Promise<void> {
   ensureDirs();
   getDb();
+  const interrupted = reconcileInterruptedSweeps();
 
   // Derive the log index once at boot, then keep it live. The agent appends to
   // notes/game-log.md during a review; without the watcher the trends view would
@@ -41,7 +42,10 @@ async function main(): Promise<void> {
     });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith("/api/")) return reply.code(404).send({ error: "Not found" });
-      return reply.sendFile("index.html");
+      // The root must be explicit: @fastify/static decorates reply.sendFile once,
+      // and the /reviews/ registration above got there first — the default root
+      // is REVIEWS_DIR, so a bare sendFile("index.html") 404s every deep link.
+      return reply.sendFile("index.html", webDist);
     });
   }
 
@@ -56,6 +60,9 @@ async function main(): Promise<void> {
   console.log(`  log       ${parsed.entries.length} entries, ${parsed.vocab.length} tags in vocabulary`);
   console.log(`  lichess   ${lichessToken() ? "token found" : "NO TOKEN — see /api/setup-help"}`);
   console.log(`  stockfish ${engine ? "found" : "NOT ON PATH — sweeps will fail"}`);
+  if (interrupted > 0) {
+    console.log(`  sweeps    ${interrupted} interrupted by a restart, marked failed — re-run them`);
+  }
   console.log(`  user      ${storedUsername() ?? "unknown — set .claude/lichess-user.local.md"}\n`);
 
   const shutdown = async () => {

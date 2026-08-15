@@ -15,6 +15,7 @@ template.html. Two things here are easy to get wrong:
    square is dark when (row + col) is odd.
 """
 import argparse
+import html
 
 SOLID = {"k": "♚", "q": "♛", "r": "♜", "b": "♝", "n": "♞", "p": "♟"}
 FILES = "abcdefgh"
@@ -42,7 +43,10 @@ def board_html(fen, highlight=(), flip=False, caption=""):
         grid = [list(reversed(r)) for r in reversed(grid)]
 
     highlight = set(highlight)
-    out = [f'<div class="board" role="img" aria-label="{caption or "chess position"}">']
+    # Escaped: the caption reaches this from a URL query in the hub, and the
+    # output is injected as raw HTML by the board component.
+    label = html.escape(caption or "chess position", quote=True)
+    out = [f'<div class="board" role="img" aria-label="{label}">']
     for r in range(8):
         for c in range(8):
             rank = (r + 1) if flip else (8 - r)

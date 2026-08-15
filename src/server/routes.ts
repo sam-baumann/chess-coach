@@ -8,6 +8,12 @@ import { boardHtml, traceSvg } from "./render.ts";
 import { openSse } from "./sse.ts";
 import { checkStockfish, readScan, startSweep, stockfishMissingHelp, sweepBus } from "./sweep.ts";
 
+function clampLimit(raw: string | undefined, fallback: number): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, 200);
+}
+
 export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/health", async () => ({
     ok: true,
@@ -19,7 +25,9 @@ export function registerRoutes(app: FastifyInstance): void {
   // ---- games -------------------------------------------------------------
 
   app.get<{ Querystring: { limit?: string } }>("/api/games", async (req) => ({
-    games: listGames(Number(req.query.limit ?? 30)),
+    // Clamped: `?limit=` parses to 0 (an empty list) and `?limit=abc` to NaN,
+    // which node:sqlite binds as NULL — no limit at all.
+    games: listGames(clampLimit(req.query.limit, 30)),
   }));
 
   app.post<{ Body: { username?: string; max?: number; perfType?: string; rated?: boolean } }>(
