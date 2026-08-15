@@ -146,7 +146,7 @@ table.games tbody tr { cursor: pointer; }
 @media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
 
 .board {
-  display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1; width: 100%;
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); aspect-ratio: 1; width: 100%;
   border: 1px solid var(--rule); border-radius: 2px; overflow: hidden;
 }
 .sq { display: flex; align-items: center; justify-content: center; position: relative; }
