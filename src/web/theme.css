@@ -195,6 +195,20 @@ table.games tbody tr { cursor: pointer; }
 }
 .pc.b { color: var(--pc-b); text-shadow: 0 1px 1px rgba(255,255,255,.18); }
 
+/* Coordinates ride inside the edge squares — the board is an 8x8 grid with
+   aspect-ratio 1, so a ninth row and column would either squash the squares or
+   push the diagram past its column. Tinted with the OPPOSITE square colour,
+   which is legible on both grounds and in both themes. */
+.co {
+  position: absolute; z-index: 2; pointer-events: none;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: min(1.9vw, 9.5px); line-height: 1; font-weight: 600; opacity: .9;
+}
+.co.rank { top: 3px; left: 3px; }
+.co.file { bottom: 2px; right: 3px; }
+.sq.l .co { color: var(--sq-d); }
+.sq.d .co { color: var(--sq-l); }
+
 /* ---- eval trace (classes emitted by eval_trace.py) ---- */
 /* The trace is drawn with preserveAspectRatio="none" precisely so it can be
    poured into whatever box it is given. Sizing it to the column rather than to a

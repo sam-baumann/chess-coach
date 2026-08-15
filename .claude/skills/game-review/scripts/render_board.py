@@ -13,6 +13,11 @@ template.html. Two things here are easy to get wrong:
    their shapes vary wildly between system fonts.
 2. a8 is a light square and a1 is dark. With rank 8 as row 0, that means a
    square is dark when (row + col) is odd.
+3. Coordinates ride *inside* the edge squares rather than in a ninth row and
+   column. The board is an 8x8 grid with aspect-ratio 1, so a gutter would
+   either squash the squares off-square or push the diagram wider than its
+   column. They follow the flip, because a board labelled from White's side
+   while showing Black's is worse than no labels at all.
 """
 import argparse
 import html
@@ -61,6 +66,14 @@ def board_html(fen, highlight=(), flip=False, caption=""):
                 inner = f'<span class="pc {side}">{SOLID[piece.lower()]}</span>'
             else:
                 inner = ""
+            # Rank down the left edge, file along the bottom — the two edges a
+            # reader's eye already runs along. aria-hidden because the diagram
+            # carries one label for the whole position; 16 loose letters read
+            # out mid-sentence would be noise.
+            if c == 0:
+                inner += f'<span class="co rank" aria-hidden="true">{rank}</span>'
+            if r == 7:
+                inner += f'<span class="co file" aria-hidden="true">{file_}</span>'
             out.append(f'<div class="{classes}" data-sq="{square}">{inner}</div>')
     out.append("</div>")
     return "".join(out)
