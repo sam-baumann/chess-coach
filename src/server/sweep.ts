@@ -24,7 +24,14 @@ sweepBus.setMaxListeners(50);
 
 const running = new Set<string>();
 
+/**
+ * Lichess ids are alphanumeric. Rejecting anything else here means no caller can
+ * turn a route param into a path outside SWEEP_DIR, whatever it forgets to check.
+ */
 export function scanPath(gameId: string): string {
+  if (!/^[A-Za-z0-9]+$/.test(gameId)) {
+    throw new Error(`Invalid game id: ${JSON.stringify(gameId)}`);
+  }
   return join(SWEEP_DIR, `${gameId}.json`);
 }
 
@@ -147,25 +154,55 @@ export async function startSweep(
     { cwd: REPO_ROOT },
   );
 
-  child.stdout.pipe(out);
-
-  let stderrTail = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderrTail = (stderrTail + chunk).slice(-4000);
-    // scan_game.py rewrites a single line: "\r  scanned 12/65 positions"
-    const matches = [...chunk.matchAll(/scanned (\d+)\/(\d+)/g)];
-    const last = matches.at(-1);
-    if (!last) return;
-    const progress = Number(last[1]) / Number(last[2]);
-    setStatus(gameId, { status: "running", progress, depth });
-    emit({ type: "sweep_progress", gameId, progress });
-  });
-
   // A spawn failure emits `error` and *then* `close`. Without this the useful
   // "is uv installed?" message is immediately overwritten by "exited -2" with an
   // empty stderr tail — exactly the case the message exists for.
   let failed = false;
+
+  child.stdout.pipe(out);
+
+  // An unhandled "error" on a stream is an uncaught exception, which would take
+  // the whole server down — every other review and sweep with it — if the disk
+  // fills or the file becomes unwritable mid-sweep.
+  out.on("error", (err) => {
+    failed = true;
+    running.delete(gameId);
+    child.kill();
+    const message = `Could not write the scan file: ${err.message}`;
+    setStatus(gameId, { status: "failed", error: message, depth });
+    emit({ type: "sweep_failed", gameId, error: message });
+  });
+
+  let stderrTail = "";
+  // Chunk boundaries are not line boundaries: a chunk can end mid-number, so
+  // "scanned 12/65" arriving as "…12/6" + "5 positions" would match 12/6 and
+  // report 200%. Only complete records (terminated by \r or \n) are parsed; the
+  // partial tail is carried into the next chunk.
+  let progressBuf = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-4000);
+
+    progressBuf += chunk;
+    const lastBreak = Math.max(progressBuf.lastIndexOf("\r"), progressBuf.lastIndexOf("\n"));
+    if (lastBreak === -1) {
+      // Guard against a pathological line with no break ever arriving.
+      progressBuf = progressBuf.slice(-4000);
+      return;
+    }
+    const complete = progressBuf.slice(0, lastBreak);
+    progressBuf = progressBuf.slice(lastBreak + 1);
+
+    // scan_game.py rewrites a single line: "\r  scanned 12/65 positions"
+    const last = [...complete.matchAll(/scanned (\d+)\/(\d+)/g)].at(-1);
+    if (!last) return;
+    const done = Number(last[1]);
+    const total = Number(last[2]);
+    if (!total) return;
+    const progress = Math.min(1, Math.max(0, done / total));
+    setStatus(gameId, { status: "running", progress, depth });
+    emit({ type: "sweep_progress", gameId, progress });
+  });
 
   child.on("error", (err) => {
     failed = true;

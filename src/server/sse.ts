@@ -9,6 +9,20 @@ export interface SseChannel<T> {
   close(): void;
 }
 
+/**
+ * Every open stream, so shutdown can end them.
+ *
+ * An SSE response is an *active* socket, and Fastify's default
+ * `forceCloseConnections: "idle"` waits for those — so `app.close()` never
+ * resolves while a browser tab is subscribed, and Ctrl-C (or a tsx watch
+ * restart) hangs. The client won't disconnect first: it is waiting on us.
+ */
+const openChannels = new Set<{ close: () => void }>();
+
+export function closeAllSse(): void {
+  for (const channel of [...openChannels]) channel.close();
+}
+
 export function openSse<T>(req: FastifyRequest, reply: FastifyReply): SseChannel<T> {
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -30,16 +44,20 @@ export function openSse<T>(req: FastifyRequest, reply: FastifyReply): SseChannel
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
+    openChannels.delete(channel);
     reply.raw.end();
   };
 
-  req.raw.on("close", close);
-
-  return {
+  const channel: SseChannel<T> = {
     send(event: T) {
       if (closed) return;
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     },
     close,
   };
+
+  openChannels.add(channel);
+  req.raw.on("close", close);
+
+  return channel;
 }

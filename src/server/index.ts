@@ -7,6 +7,7 @@ import { getDb, closeDb } from "./db.ts";
 import { rebuildIndex, watchGameLog } from "./gamelog.ts";
 import { registerRoutes } from "./routes.ts";
 import { closeAllSessions } from "./agent.ts";
+import { closeAllSse } from "./sse.ts";
 import { checkStockfish, reconcileInterruptedSweeps } from "./sweep.ts";
 
 async function main(): Promise<void> {
@@ -67,6 +68,9 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     closeAllSessions();
+    // Before app.close(): an open SSE response is an active socket, and Fastify
+    // waits for those, so a single subscribed browser tab would hang Ctrl-C.
+    closeAllSse();
     await app.close();
     closeDb();
     process.exit(0);

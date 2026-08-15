@@ -219,8 +219,21 @@ export function TrendsPanel() {
         {entries.map((e) => (
           <div key={e.id} style={{ paddingBottom: 16, marginBottom: 16, borderBottom: "1px solid var(--rule)" }}>
             <p className="eyebrow" style={{ marginBottom: 8 }}>
-              {e.date} · {e.kind === "player-review" ? "player review" : `${e.colour} vs ${e.opponent}`} ·{" "}
-              {e.opening ?? "—"} · {e.result ?? "—"}
+              {/* A heading need only start with a date — a quick "was that a
+                  blunder?" check has no "<colour> vs <opponent>" part, and
+                  interpolating the nulls printed a literal "null vs null". */}
+              {[
+                e.date,
+                e.kind === "player-review"
+                  ? "player review"
+                  : e.opponent
+                    ? `${e.colour ?? "?"} vs ${e.opponent}`
+                    : null,
+                e.opening,
+                e.result,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             <p style={{ margin: "0 0 6px" }}>
               <strong>Struggled.</strong> {e.struggled}

@@ -203,6 +203,10 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get<{ Params: { id: string }; Querystring: { mark?: string; aria?: string } }>(
     "/api/games/:id/trace.svg",
     async (req, reply) => {
+      // Check the game exists first, like every other :id route. Fastify leaves
+      // encoded traversal in params intact, and this id becomes a filesystem
+      // path via scanPath() — "..%2f..%2fetc%2ffoo" would read outside data/sweeps.
+      if (!getGame(req.params.id)) return reply.code(404).send({ error: "Unknown game" });
       if (!readScan(req.params.id)) {
         return reply.code(404).send({ error: "No sweep on disk for this game yet" });
       }

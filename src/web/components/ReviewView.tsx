@@ -58,6 +58,12 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
 
   if (!game) return <p className="muted">{error ?? "Loading…"}</p>;
 
+  // A sweep already running when this view opened emits nothing until its next
+  // progress tick, so fall back to the status the server returned with the game —
+  // otherwise the panel claims "No engine sweep yet" while one is underway.
+  const running =
+    sweepProgress ?? (game.sweep?.status === "running" ? game.sweep.progress : null);
+
   const swept = game.sweep?.status === "done";
   const moves = game.moves.split(" ").filter(Boolean);
   const currentFen = fens[ply] ?? START_FEN;
@@ -124,23 +130,36 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
             </>
           ) : (
             <div className="card" style={{ marginTop: 16 }}>
-              {sweepProgress != null ? (
+              {running != null ? (
                 <>
                   <p className="muted" style={{ margin: "0 0 10px" }}>
-                    Sweeping the game at depth 18 — {Math.round(sweepProgress * 100)}%
+                    Sweeping the game at depth {game.sweep?.depth ?? 18} — {Math.round(running * 100)}%
                   </p>
                   <div className="bar" style={{ width: "100%" }}>
-                    <i style={{ width: `${sweepProgress * 100}%` }} />
+                    <i style={{ width: `${Math.max(3, running * 100)}%` }} />
                   </div>
                 </>
               ) : (
                 <>
+                  {game.sweep?.status === "failed" && (
+                    <p className="err" style={{ margin: "0 0 12px", whiteSpace: "pre-wrap" }}>
+                      The last sweep failed. {game.sweep.error}
+                    </p>
+                  )}
                   <p className="muted" style={{ margin: "0 0 12px" }}>
                     No engine sweep yet. The sweep ranks every move by centipawn loss so the
                     critical moments are found rather than guessed at — it takes a few minutes.
                   </p>
-                  <button className="btn" onClick={() => void api.startSweep(gameId).catch((e: Error) => setError(e.message))}>
-                    run the sweep
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void api
+                        .startSweep(gameId, game.sweep?.status === "failed")
+                        .then(() => setSweepProgress(0))
+                        .catch((e: Error) => setError(e.message))
+                    }
+                  >
+                    {game.sweep?.status === "failed" ? "retry the sweep" : "run the sweep"}
                   </button>
                 </>
               )}
