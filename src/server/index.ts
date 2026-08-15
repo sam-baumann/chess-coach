@@ -26,9 +26,9 @@ async function main(): Promise<void> {
   // Published review pages, so the game-review skill's output is viewable
   // in-app. (The Artifact tool isn't available to the SDK — the agent writes
   // reviews/<name>.html and this serves it.)
-  if (existsSync(REVIEWS_DIR)) {
-    await app.register(fastifyStatic, { root: REVIEWS_DIR, prefix: "/reviews/" });
-  }
+  // ensureDirs() has created REVIEWS_DIR, so this registers unconditionally —
+  // a page the agent writes mid-session is served without a restart.
+  await app.register(fastifyStatic, { root: REVIEWS_DIR, prefix: "/reviews/" });
 
   // In production the built SPA is served from the same origin; in dev, Vite
   // serves it on :5173 and proxies /api here.

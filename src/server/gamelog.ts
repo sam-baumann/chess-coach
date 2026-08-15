@@ -18,19 +18,23 @@ const SEP = "·";
 export interface ParsedLog {
   entries: Omit<LogEntry, "id">[];
   vocab: ThemeVocabEntry[];
+  /** Dated-looking headings the parser rejected — see `parseGameLog`. */
+  skipped: { line: number; heading: string }[];
 }
 
-function splitRegions(text: string): { header: string; body: string } {
+/** `bodyLine0` is the file line number (1-based) of the body's first line. */
+function splitRegions(text: string): { header: string; body: string; bodyLine0: number } {
   const lines = text.split("\n");
   const idx = lines.findIndex((l) => l.trimStart().startsWith(ENTRIES_MARKER));
   if (idx === -1) {
     // No marker: treat the whole file as header so we never invent entries out
     // of a malformed log. Better to show zero than to show the example entry.
-    return { header: text, body: "" };
+    return { header: text, body: "", bodyLine0: lines.length + 1 };
   }
   return {
     header: lines.slice(0, idx + 1).join("\n"),
     body: lines.slice(idx + 1).join("\n"),
+    bodyLine0: idx + 2,
   };
 }
 
@@ -112,11 +116,17 @@ const FIELDS = {
  * Parse the six-line entry blocks. Tolerant of a missing field (renders blank)
  * but strict about the heading — an unparseable heading drops the block rather
  * than producing an entry with a bogus date that would skew "last three games".
+ *
+ * Entries are written by an agent, not typed by hand, so a dropped block is more
+ * likely formatting drift than a deliberate note. Rejected headings are reported
+ * in `skipped` rather than vanishing: a silent drop means the agent reports
+ * "logged" while Trends never sees the entry.
  */
 export function parseGameLog(text: string): ParsedLog {
-  const { header, body } = splitRegions(text);
+  const { header, body, bodyLine0 } = splitRegions(text);
   const vocab = parseVocab(header);
   const entries: Omit<LogEntry, "id">[] = [];
+  const skipped: { line: number; heading: string }[] = [];
 
   const lines = body.split("\n");
   let current: (Omit<LogEntry, "id"> & { lineStart: number }) | null = null;
@@ -130,7 +140,10 @@ export function parseGameLog(text: string): ParsedLog {
     if (line.startsWith("## ")) {
       flush();
       const head = parseHeading(line);
-      if (!head) return;
+      if (!head) {
+        skipped.push({ line: bodyLine0 + i, heading: line.trim() });
+        return;
+      }
       current = {
         ...head,
         gameUrl: null,
@@ -162,7 +175,17 @@ export function parseGameLog(text: string): ParsedLog {
   });
   flush();
 
-  return { entries, vocab };
+  return { entries, vocab, skipped };
+}
+
+/**
+ * Headings rejected by the most recent parse. Kept in memory rather than in the
+ * DB — it describes the current file, not history, and is rewritten every parse.
+ */
+let lastSkipped: ParsedLog["skipped"] = [];
+
+export function skippedHeadings(): ParsedLog["skipped"] {
+  return lastSkipped;
 }
 
 /** Truncate-and-reparse. The file is small; incremental sync would be more bug than benefit. */
@@ -174,6 +197,10 @@ export function rebuildIndex(): ParsedLog {
     text = ""; // No log yet — an empty index, not a crash.
   }
   const parsed = parseGameLog(text);
+  lastSkipped = parsed.skipped;
+  for (const s of parsed.skipped) {
+    console.warn(`[gamelog] line ${s.line}: unparseable heading, entry dropped — ${s.heading}`);
+  }
   const db = getDb();
 
   db.exec("BEGIN");
@@ -279,11 +306,9 @@ export function themeVocab(): Map<string, string[]> {
 }
 
 /**
- * The recurrence rule, implemented exactly as notes/game-log.md states it: a tag
- * is worth raising at three-or-more appearances, or in two of the last three
- * entries. Anything below that is noise, and the log is explicit that mentioning
- * it invents a pattern out of coincidence — so this returns null rather than
- * "the most common tag so far".
+ * A plain tally: how many entries carry each tag, most-frequent first. The
+ * recurrence *threshold* lives in `pickRecurring` alone — this is the raw count
+ * the Trends view charts.
  */
 export function countThemes(entries: Pick<LogEntry, "themes">[]): { tag: string; count: number }[] {
   const counts = new Map<string, number>();

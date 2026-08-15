@@ -95,6 +95,22 @@ Themes: passive-defence
   assert.deepEqual(entries.flatMap((e) => e.themes), ["piece-activity", "passive-defence"]);
 });
 
+test("a dropped heading is reported, not silently swallowed", () => {
+  // Entries are agent-written, so formatting drift is the likely cause of a drop.
+  // Without this the agent can report "logged" while Trends never sees the entry.
+  const log = `${realLog}
+## 2026-08-11 - white vs alice (1500) - Italian Game - win
+Themes: piece-activity
+`;
+  const { entries, skipped } = parseGameLog(log);
+  assert.equal(entries.length, 0, "hyphen separators are not the log format");
+  assert.equal(skipped.length, 1);
+  assert.match(skipped[0].heading, /2026-08-11 - white vs alice/);
+
+  // The line number is file-relative, so it points at the real line to fix.
+  assert.equal(log.split("\n")[skipped[0].line - 1], "## 2026-08-11 - white vs alice (1500) - Italian Game - win");
+});
+
 test("a log with no entries marker yields nothing rather than guessing", () => {
   const { entries } = parseGameLog("## 2026-01-01 · white vs x (1) · Y · win\nThemes: king-safety");
   assert.equal(entries.length, 0);

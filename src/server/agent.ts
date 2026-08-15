@@ -6,7 +6,7 @@ import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthro
 import type { Game, ReviewEvent, ReviewMessage, ReviewSession } from "../shared/events.ts";
 import { REPO_ROOT } from "./config.ts";
 import { getDb } from "./db.ts";
-import { scanPath } from "./sweep.ts";
+import { PROBE_SCRIPT, scanPath } from "./sweep.ts";
 
 /**
  * The agent side of the hub.
@@ -65,7 +65,7 @@ function hubContext(game: Game, scanRelPath: string | null): string {
       "against it for the moves you choose:",
       "",
       "```bash",
-      `uv run --with chess python .claude/skills/stockfish-local/scripts/probe_moments.py ${scanRelPath} --plies <n,n,n> --depth 22`,
+      `uv run --with chess python ${PROBE_SCRIPT} ${scanRelPath} --plies <n,n,n> --depth 22`,
       "```",
       "",
       "Quote evaluations from the probe, never from the depth-18 sweep.",
@@ -96,7 +96,6 @@ function hubContext(game: Game, scanRelPath: string | null): string {
 
 interface LiveSession {
   id: string;
-  gameId: string;
   q: Query;
   push: (text: string) => void;
   bus: EventEmitter;
@@ -350,7 +349,6 @@ export function attach(sessionId: string, game: Game): EventEmitter {
 
   const session: LiveSession = {
     id: sessionId,
-    gameId: game.id,
     q,
     push: queue.push,
     bus,
@@ -370,7 +368,6 @@ export function attach(sessionId: string, game: Game): EventEmitter {
       } satisfies ReviewEvent);
     } finally {
       live.delete(sessionId);
-      bus.emit("event", { type: "error", message: "Session closed." } satisfies ReviewEvent);
     }
   })();
 

@@ -18,6 +18,9 @@ export const PORT = Number(process.env.PORT ?? 3001);
 
 export function ensureDirs(): void {
   mkdirSync(SWEEP_DIR, { recursive: true });
+  // Git doesn't track empty directories, so this may be absent on a fresh clone.
+  // Creating it lets the /reviews/ static route register unconditionally at boot.
+  mkdirSync(REVIEWS_DIR, { recursive: true });
 }
 
 /**

@@ -48,6 +48,7 @@ function setStatus(
     `INSERT INTO sweeps (game_id, depth, status, progress, scan_path, error, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(game_id) DO UPDATE SET
+       depth = excluded.depth,
        status = COALESCE(excluded.status, sweeps.status),
        progress = excluded.progress,
        error = excluded.error`,
@@ -110,13 +111,17 @@ export async function startSweep(
   if (!moves.trim()) {
     return { status: "unavailable", message: "This game has no recorded moves to sweep." };
   }
+
+  // Claim the slot before the first await: two clicks close together would both
+  // clear the guard above and spawn a second scan writing the same file.
+  running.add(gameId);
   if (!(await checkStockfish())) {
+    running.delete(gameId);
     setStatus(gameId, { status: "failed", error: stockfishMissingHelp(), depth });
     return { status: "unavailable", message: stockfishMissingHelp() };
   }
 
   ensureDirs();
-  running.add(gameId);
   setStatus(gameId, { status: "running", progress: 0, depth });
 
   const out = createWriteStream(scanPath(gameId));

@@ -15,6 +15,10 @@ const run = promisify(execFile);
  * knows a square is dark when row+col is odd; eval_trace.py draws a *diverging*
  * two-fill chart around the midline, which a single-fill area chart would erase.
  * Shelling out keeps one implementation of each.
+ *
+ * Invoked through `uv run`, per CLAUDE.md, so these two call sites keep working
+ * if either script ever grows a third-party import (preview.py in the same skill
+ * directory already needs one).
  */
 
 const BOARD_SCRIPT = ".claude/skills/game-review/scripts/render_board.py";
@@ -29,13 +33,13 @@ export async function boardHtml(
   const args = [BOARD_SCRIPT, fen, "--highlight", highlight.join(",")];
   if (flip) args.push("--flip");
   if (caption) args.push("--caption", caption);
-  const { stdout } = await run("python3", args, { cwd: REPO_ROOT, maxBuffer: 1 << 20 });
+  const { stdout } = await run("uv", ["run", "python", ...args], { cwd: REPO_ROOT, maxBuffer: 1 << 20 });
   return stdout;
 }
 
 export async function traceSvg(gameId: string, marks: string[] = [], aria = ""): Promise<string> {
   const args = [TRACE_SCRIPT, scanPath(gameId), "--mark", marks.join(",")];
   if (aria) args.push("--aria", aria);
-  const { stdout } = await run("python3", args, { cwd: REPO_ROOT, maxBuffer: 4 << 20 });
+  const { stdout } = await run("uv", ["run", "python", ...args], { cwd: REPO_ROOT, maxBuffer: 4 << 20 });
   return stdout;
 }

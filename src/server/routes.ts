@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { ReviewEvent, SweepEvent } from "../shared/events.ts";
 import { storedUsername, lichessToken, TOKEN_SETUP_HELP } from "./config.ts";
-import { attach, createSession, getSession, listSessionsForGame, sendUserTurn } from "./agent.ts";
-import { computeTrends, listEntries, rebuildIndex, themeVocab } from "./gamelog.ts";
+import { attach, closeSession, createSession, getSession, listSessionsForGame, sendUserTurn } from "./agent.ts";
+import { computeTrends, listEntries, rebuildIndex, skippedHeadings, themeVocab } from "./gamelog.ts";
 import { LichessError, fetchGames, getGame, listGames, upsertGames } from "./lichess.ts";
 import { boardHtml, traceSvg } from "./render.ts";
 import { openSse } from "./sse.ts";
@@ -108,7 +108,13 @@ export function registerRoutes(app: FastifyInstance): void {
     const bus = attach(session.id, game);
     const onEvent = (event: ReviewEvent) => channel.send(event);
     bus.on("event", onEvent);
-    req.raw.on("close", () => bus.off("event", onEvent));
+    req.raw.on("close", () => {
+      bus.off("event", onEvent);
+      // Last viewer gone: stop the agent rather than leaving its process and
+      // queue resident for the life of the server. The next stream resumes it
+      // from the persisted agent session id.
+      if (bus.listenerCount("event") === 0) closeSession(session.id);
+    });
   });
 
   app.post<{ Params: { id: string }; Body: { text?: string } }>(
@@ -130,6 +136,9 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/log", async () => ({
     entries: listEntries(),
     vocab: [...themeVocab()].map(([tag, puzzleThemes]) => ({ tag, puzzleThemes })),
+    // Blocks the parser rejected. Surfaced so a formatting drift in an
+    // agent-written entry is visible rather than silently missing from Trends.
+    skipped: skippedHeadings(),
   }));
 
   app.get("/api/trends", async () => computeTrends());
@@ -137,7 +146,7 @@ export function registerRoutes(app: FastifyInstance): void {
   /** Escape hatch for when the log was edited by hand outside the watcher. */
   app.post("/api/log/reindex", async () => {
     const parsed = rebuildIndex();
-    return { entries: parsed.entries.length, vocab: parsed.vocab.length };
+    return { entries: parsed.entries.length, vocab: parsed.vocab.length, skipped: parsed.skipped };
   });
 
   // ---- rendering ---------------------------------------------------------

@@ -93,10 +93,14 @@ export function GamesList({
   async function sweep(id: string) {
     setError(null);
     try {
-      await api.startSweep(id);
-      setGames((prev) =>
-        prev.map((g) => (g.id === id ? { ...g, sweep: { ...blankSweep(id), status: "running" } } : g)),
-      );
+      // "already-done" comes back as a 200. Showing a progress bar for it leaves
+      // the row stuck at 0% forever — nothing is running to emit further events.
+      const { status } = await api.startSweep(id);
+      const sweep: NonNullable<Game["sweep"]> =
+        status === "already-done"
+          ? { ...blankSweep(id), status: "done", progress: 1 }
+          : { ...blankSweep(id), status: "running" };
+      setGames((prev) => prev.map((g) => (g.id === id ? { ...g, sweep } : g)));
     } catch (err) {
       setError({ message: (err as Error).message });
     }
