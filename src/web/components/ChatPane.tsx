@@ -75,6 +75,9 @@ export function ChatPane({ session }: { session: ReviewSession }) {
         { kind: "message", id: `err:${Date.now()}`, role: "assistant", text: `⚠ ${(err as Error).message}` },
       ]);
       setThinking(false);
+      // Put the text back rather than making the user retype a question they may
+      // have spent a while on — but only if they haven't started a new one.
+      setDraft((current) => current || text);
     }
   }
 

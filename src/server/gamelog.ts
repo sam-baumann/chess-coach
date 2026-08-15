@@ -282,6 +282,15 @@ export function watchGameLog(onRebuild?: () => void): void {
    * goes silent — Trends would stop updating for the life of the process after a
    * single hand-edit, with no signal.
    */
+  /** Backoff capped at 5s, so a persistent failure retries quietly rather than spinning. */
+  const retry = (attempt: number, err: unknown) => {
+    if (attempt >= 10) {
+      console.error("[gamelog] gave up watching", GAME_LOG_PATH, err);
+      return;
+    }
+    setTimeout(() => arm(attempt + 1), Math.min(5000, 100 * (attempt + 1)));
+  };
+
   const arm = (attempt = 0) => {
     try {
       watcher = watch(GAME_LOG_PATH, (eventType) => {
@@ -290,15 +299,20 @@ export function watchGameLog(onRebuild?: () => void): void {
         watcher?.close();
         setTimeout(() => arm(), 50);
       });
+      // FSWatcher emits 'error' asynchronously (invalidated inotify instance,
+      // ENOSPC on the watch limit, EPERM), and an EventEmitter with no 'error'
+      // listener rethrows — which would kill the server, and every live review
+      // and running sweep with it, from a background file watcher.
+      watcher.on("error", (err) => {
+        console.error("[gamelog] watch error, re-arming:", err);
+        watcher?.close();
+        retry(attempt, err);
+      });
     } catch (err) {
       // A save that unlinks then recreates makes this throw ENOENT while the
       // file is briefly absent. Giving up on the first failure would leave the
       // watch dead for the process lifetime — the very thing re-arming prevents.
-      if (attempt < 10) {
-        setTimeout(() => arm(attempt + 1), 100 * (attempt + 1));
-        return;
-      }
-      console.error("[gamelog] gave up watching", GAME_LOG_PATH, err);
+      retry(attempt, err);
     }
   };
 
@@ -418,7 +432,10 @@ export function computeTrends(): Trends {
         `SELECT played_at, speed,
                 CASE user_color WHEN 'white' THEN white_rating ELSE black_rating END AS rating
            FROM games
-          WHERE user_color IS NOT NULL AND rating IS NOT NULL
+          -- rated only: Lichess reports the player's current rating on casual
+          -- games too, which would draw movement between games where the rating
+          -- did not change.
+          WHERE user_color IS NOT NULL AND rating IS NOT NULL AND rated = 1
           ORDER BY played_at ASC`,
       )
       .all() as { played_at: number; speed: string; rating: number }[]

@@ -37,7 +37,10 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
       if (e.type === "sweep_progress") setSweepProgress(e.progress);
       if (e.type === "sweep_done") {
         setSweepProgress(null);
-        void load();
+        // Caught: these reloads fire exactly when a server restart is likely, and
+        // an unhandled rejection would leave the pre-sweep card on screen for a
+        // game that just finished, with nothing telling the user to reload.
+        void load().catch((err: Error) => setError(err.message));
       }
       if (e.type === "sweep_failed") {
         setSweepProgress(null);
@@ -45,7 +48,9 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
         // Reload too: `running` falls back to game.sweep.progress, so without a
         // refresh the panel keeps showing a frozen bar at the last percentage
         // and the retry button stays unreachable.
-        void load();
+        void load().catch(() => {
+          /* the sweep error above is the more useful message */
+        });
       }
     });
   }, [gameId, load]);
