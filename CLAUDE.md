@@ -26,7 +26,8 @@ When the user shares a game (Lichess URL, PGN, or move list):
    `notes/game-log.md`, linked as `https://lichess.org/training/<theme>`, chosen for the
    habit you led with rather than for the game's worst move. If the habit is one puzzles
    can't fix (opening prep, trade judgment), say that and prescribe the honest alternative.
-5. Append an entry to `notes/game-log.md` before the review is done.
+5. Add an entry to `notes/game-log.md` before the review is done — at the top of the
+   entries section, which the file keeps newest-first.
 
 Look for the *one habit* connecting the worst moves and lead with that. Five unrelated
 errors teach nothing; the same error in five places changes how someone plays. Note where

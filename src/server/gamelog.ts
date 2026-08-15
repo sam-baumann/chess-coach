@@ -151,7 +151,9 @@ export function parseGameLog(text: string): ParsedLog {
         struggled: "",
         heldUp: "",
         workOn: "",
-        lineStart: i,
+        // File-relative, matching skipped[].line — both point at a line a reader
+        // can go to in notes/game-log.md.
+        lineStart: bodyLine0 + i,
       };
       return;
     }
@@ -292,9 +294,13 @@ export function watchGameLog(onRebuild?: () => void): void {
 export function listEntries(): LogEntry[] {
   const rows = getDb()
     .prepare(
+      // Newest first by date, not by file position. pickRecurring's
+      // "two of the last three" reads the head of this list, and the agent is
+      // told to *append* entries — ordering by ordinal would hand it the three
+      // oldest and report the wrong habit with no error anywhere.
       `SELECT id, heading_date, kind, colour, opponent, opponent_rating, opening,
               result, game_url, struggled, held_up, work_on
-         FROM log_entries ORDER BY ordinal ASC`,
+         FROM log_entries ORDER BY heading_date DESC, ordinal ASC`,
     )
     .all() as Record<string, string | number | null>[];
 

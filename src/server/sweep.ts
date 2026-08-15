@@ -18,6 +18,9 @@ const PROBE_SCRIPT = ".claude/skills/stockfish-local/scripts/probe_moments.py";
 const DEFAULT_DEPTH = 18;
 
 export const sweepBus = new EventEmitter();
+// Both the games list and every open review subscribe to /api/sweeps/stream, so
+// a handful of tabs passes the default cap of 10 while working correctly.
+sweepBus.setMaxListeners(50);
 
 const running = new Set<string>();
 

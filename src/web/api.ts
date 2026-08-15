@@ -58,13 +58,26 @@ export const api = {
 
   say: (id: string, text: string) => post(`/api/reviews/${id}/messages`, { text }).then(json<{ ok: true }>),
 
-  log: () => fetch("/api/log").then(json<{ entries: LogEntry[]; vocab: ThemeVocabEntry[] }>),
+  log: () =>
+    fetch("/api/log").then(
+      json<{ entries: LogEntry[]; vocab: ThemeVocabEntry[]; skipped: { line: number; heading: string }[] }>,
+    ),
 
   trends: () => fetch("/api/trends").then(json<Trends>),
 };
 
-/** Subscribe to an SSE endpoint. Returns an unsubscribe function. */
-function subscribe<T>(url: string, onEvent: (event: T) => void): () => void {
+/**
+ * Subscribe to an SSE endpoint. Returns an unsubscribe function.
+ *
+ * `onConnected(false)` fires on a dropped or refused connection. EventSource
+ * retries silently forever, so without it a restarted server or a 404'd session
+ * leaves the UI waiting on a stream nothing is feeding.
+ */
+function subscribe<T>(
+  url: string,
+  onEvent: (event: T) => void,
+  onConnected?: (connected: boolean) => void,
+): () => void {
   const source = new EventSource(url);
   source.onmessage = (e) => {
     try {
@@ -74,11 +87,16 @@ function subscribe<T>(url: string, onEvent: (event: T) => void): () => void {
       // on the server side, and dropping it beats tearing down the stream.
     }
   };
+  source.onopen = () => onConnected?.(true);
+  source.onerror = () => onConnected?.(false);
   return () => source.close();
 }
 
 export const streamSweeps = (onEvent: (e: SweepEvent) => void) =>
   subscribe<SweepEvent>("/api/sweeps/stream", onEvent);
 
-export const streamReview = (id: string, onEvent: (e: ReviewEvent) => void) =>
-  subscribe<ReviewEvent>(`/api/reviews/${id}/stream`, onEvent);
+export const streamReview = (
+  id: string,
+  onEvent: (e: ReviewEvent) => void,
+  onConnected?: (connected: boolean) => void,
+) => subscribe<ReviewEvent>(`/api/reviews/${id}/stream`, onEvent, onConnected);

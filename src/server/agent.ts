@@ -82,9 +82,10 @@ function hubContext(game: Game, scanRelPath: string | null): string {
     "",
     "### Finishing",
     "",
-    "Append the entry to `notes/game-log.md` before you call the review done, in the",
-    "exact six-line format its header prescribes. The hub reparses that file on",
-    "write, so the trends view picks the entry up immediately.",
+    "Write the entry to `notes/game-log.md` before you call the review done, in the",
+    "exact six-line format its header prescribes, at the **top** of the entries",
+    "section — the file is newest-first, as its own marker comment says. The hub",
+    "reparses that file on write, so the trends view picks the entry up immediately.",
     "",
     "If the user asks for a page to keep, use the `game-review` skill but write the",
     "file to `reviews/<name>.html` — the Artifact tool is not available here. The hub",
@@ -96,6 +97,10 @@ function hubContext(game: Game, scanRelPath: string | null): string {
 
 interface LiveSession {
   id: string;
+  /** Needed to notice a sweep that finished after the prompt was built. */
+  gameId: string;
+  /** True once the agent has been told the sweep is available. */
+  sweepAnnounced: boolean;
   q: Query;
   push: (text: string) => void;
   /** Ends the push generator; without it the iterator parks on a promise forever. */
@@ -403,6 +408,8 @@ export function attach(sessionId: string, game: Game): EventEmitter {
 
   const session: LiveSession = {
     id: sessionId,
+    gameId: game.id,
+    sweepAnnounced: scanRel !== null,
     q,
     push: queue.push,
     closeQueue: queue.close,
@@ -438,10 +445,55 @@ export function attach(sessionId: string, game: Game): EventEmitter {
 export function sendUserTurn(sessionId: string, game: Game, text: string): void {
   attach(sessionId, game); // no-op if the agent is already running
   appendMessage(sessionId, "user", text);
-  live.get(sessionId)?.push(text);
+
+  const s = live.get(sessionId);
+  if (!s) return;
+
+  // The system prompt is fixed at attach() time, so a session opened before or
+  // during a sweep is stuck being told no sweep exists. Correct it on the next
+  // turn rather than pushing an unprompted one, which would spend a turn the
+  // user didn't ask for. Only the user's own text is persisted as their message.
+  let prefix = "";
+  if (!s.sweepAnnounced && sweepStatus(s.gameId)?.status === "done") {
+    const rel = relative(REPO_ROOT, scanPath(s.gameId));
+    prefix =
+      `[hub] The pass-1 sweep for this game has finished since this review started. ` +
+      `It is on disk at \`${rel}\` — read it to locate the critical moments, and run ` +
+      `probe_moments.py against it rather than scan_game.py.\n\n`;
+    s.sweepAnnounced = true;
+  }
+  s.push(prefix + text);
+}
+
+/**
+ * Closing on the last disconnect is right, but doing it *immediately* aborts the
+ * agent mid-turn on a page navigation or a transient drop — and nothing re-sends
+ * the pending question, so from the user's side it simply never gets answered.
+ * The grace window lets a reconnect cancel the close.
+ */
+const CLOSE_GRACE_MS = 30_000;
+const closeTimers = new Map<string, NodeJS.Timeout>();
+
+export function cancelScheduledClose(sessionId: string): void {
+  const t = closeTimers.get(sessionId);
+  if (!t) return;
+  clearTimeout(t);
+  closeTimers.delete(sessionId);
+}
+
+export function scheduleClose(sessionId: string): void {
+  cancelScheduledClose(sessionId);
+  const timer = setTimeout(() => {
+    closeTimers.delete(sessionId);
+    // Re-check: a viewer may have come back during the window.
+    if ((buses.get(sessionId)?.listenerCount("event") ?? 0) === 0) closeSession(sessionId);
+  }, CLOSE_GRACE_MS);
+  timer.unref?.();
+  closeTimers.set(sessionId, timer);
 }
 
 export function closeSession(sessionId: string): void {
+  cancelScheduledClose(sessionId);
   const s = live.get(sessionId);
   if (s) {
     s.closeQueue();

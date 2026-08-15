@@ -64,23 +64,66 @@ function RatingSpark({ speed, points }: { speed: string; points: { playedAt: num
 export function TrendsPanel() {
   const [trends, setTrends] = useState<Trends | null>(null);
   const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [skipped, setSkipped] = useState<{ line: number; heading: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api.trends().then(setTrends);
-    void api.log().then((r) => setEntries(r.entries));
+    // Without the catch a failed request leaves trends null forever, so the panel
+    // renders "Loading…" permanently and the rejection only reaches the console.
+    void api.trends().then(setTrends).catch((err: Error) => setError(err.message));
+    void api
+      .log()
+      .then((r) => {
+        setEntries(r.entries);
+        setSkipped(r.skipped);
+      })
+      .catch((err: Error) => setError(err.message));
   }, []);
+
+  if (error) {
+    return (
+      <div className="card notice">
+        <strong className="err">Could not load your trends</strong>
+        <p className="muted" style={{ marginBottom: 0 }}>{error}</p>
+      </div>
+    );
+  }
 
   if (!trends) return <p className="muted">Loading…</p>;
 
+  // A dropped entry is otherwise invisible: the agent reports "logged" and the
+  // block simply never appears in any of the counts below.
+  const skippedNotice = skipped.length > 0 && (
+    <div className="card notice" style={{ gridColumn: "1 / -1" }}>
+      <strong className="err">
+        {skipped.length} log entr{skipped.length === 1 ? "y is" : "ies are"} not being counted
+      </strong>
+      <p className="muted" style={{ margin: "6px 0 0" }}>
+        The heading doesn&rsquo;t match the format <code>notes/game-log.md</code> prescribes, so
+        the block is skipped. Fix the heading and it will be picked up on save.
+      </p>
+      <ul className="muted" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+        {skipped.map((s) => (
+          <li key={s.line} className="mono" style={{ fontSize: 12.5 }}>
+            line {s.line}: {s.heading}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   if (trends.entryCount === 0) {
     return (
-      <div className="card">
-        <h2>Nothing logged yet</h2>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          The coach writes a six-line note to <code>notes/game-log.md</code> after each review.
-          Trends appear here once a few games have accumulated — a single bad move teaches
-          nothing, the same one across five games is a training plan.
-        </p>
+      <div className="trend-grid">
+        {skippedNotice}
+        <div className="card" style={{ gridColumn: "1 / -1" }}>
+          <h2>Nothing logged yet</h2>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            The coach writes a six-line note to <code>notes/game-log.md</code> after each review.
+            Trends appear here once a few games have accumulated — a single bad move teaches
+            nothing, the same one across five games is a training plan.
+          </p>
+        </div>
       </div>
     );
   }
@@ -89,6 +132,7 @@ export function TrendsPanel() {
 
   return (
     <div className="trend-grid">
+      {skippedNotice}
       {/* The log's own rule: raise a theme at three-plus games, or two of the last
           three. Below that, naming a pattern invents one — so this renders
           nothing rather than "your most common tag so far". */}

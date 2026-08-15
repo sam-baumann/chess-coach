@@ -187,6 +187,10 @@ svg.trace { display: block; width: 100%; height: auto; min-width: 560px; }
 .mk.mistake text { fill: var(--warn-ink); }
 .hz { fill: transparent; }
 .axis { font-size: 10.5px; fill: var(--ink-3); letter-spacing: .1em; text-transform: uppercase; }
+/* eval_trace.py always emits these two for the template's hover readout. The hub
+   has no hover JS, and an unstyled <circle> defaults to black fill — without
+   this a stray dot sits in the corner of every trace. */
+#cross, #dot { opacity: 0; }
 
 /* ---- chat ---- */
 .chat { display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 460px; }

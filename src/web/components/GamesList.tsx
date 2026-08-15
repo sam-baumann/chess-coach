@@ -10,21 +10,21 @@ function resultBadge(game: Game): { label: string; cls: string } {
     : { label: "loss", cls: "loss" };
 }
 
-function SweepCell({ game, onSweep }: { game: Game; onSweep: (id: string) => void }) {
+function SweepCell({ game, onSweep }: { game: Game; onSweep: (id: string, force: boolean) => void }) {
   const s = game.sweep;
-  if (!s || s.status === "queued") {
-    return (
-      <button
-        className="btn ghost"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSweep(game.id);
-        }}
-      >
-        sweep
-      </button>
-    );
-  }
+  const button = (label: string, force: boolean) => (
+    <button
+      className="btn ghost"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSweep(game.id, force);
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  if (!s || s.status === "queued") return button("sweep", false);
   if (s.status === "running") {
     return (
       <div className="bar" title={`${Math.round(s.progress * 100)}%`}>
@@ -32,8 +32,23 @@ function SweepCell({ game, onSweep }: { game: Game; onSweep: (id: string) => voi
       </div>
     );
   }
-  if (s.status === "failed") return <span className="badge failed">failed</span>;
-  return <span className="badge done">swept</span>;
+  // A finished-but-corrupt scan file would otherwise be a dead end: the badge
+  // replaces the button, and recovery meant deleting data/ by hand.
+  if (s.status === "failed") {
+    return (
+      <>
+        <span className="badge failed" title={s.error ?? ""}>
+          failed
+        </span>{" "}
+        {button("retry", true)}
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="badge done">swept</span> {button("re-sweep", true)}
+    </>
+  );
 }
 
 export function GamesList({
@@ -49,7 +64,12 @@ export function GamesList({
   const [error, setError] = useState<{ message: string; help?: string } | null>(null);
 
   useEffect(() => {
-    void api.games().then((r) => setGames(r.games));
+    // Without the catch, a failed load renders the "no games yet, fetch some"
+    // empty state — blaming the user for a server error.
+    void api
+      .games()
+      .then((r) => setGames(r.games))
+      .catch((err: Error) => setError({ message: err.message }));
   }, []);
 
   useEffect(() => {
@@ -90,12 +110,12 @@ export function GamesList({
     }
   }
 
-  async function sweep(id: string) {
+  async function sweep(id: string, force = false) {
     setError(null);
     try {
       // "already-done" comes back as a 200. Showing a progress bar for it leaves
       // the row stuck at 0% forever — nothing is running to emit further events.
-      const { status } = await api.startSweep(id);
+      const { status } = await api.startSweep(id, force);
       const sweep: NonNullable<Game["sweep"]> =
         status === "already-done"
           ? { ...blankSweep(id), status: "done", progress: 1 }
@@ -169,7 +189,7 @@ export function GamesList({
                   </td>
                   <td className="num">{g.speed}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <SweepCell game={g} onSweep={(id) => void sweep(id)} />
+                    <SweepCell game={g} onSweep={(id, force) => void sweep(id, force)} />
                   </td>
                 </tr>
               );

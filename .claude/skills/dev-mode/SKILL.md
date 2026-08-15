@@ -37,7 +37,8 @@ pnpm test        # node:test — game-log parser + recurrence rule
 
 **Coaching state (outside `.claude/`):**
 - `notes/game-log.md` — six-line note per analysed game (themes, what was struggled with,
-  what to work on), newest first. The coach reads it before a review and appends after one,
+  what to work on), newest first. The coach reads it before a review and adds an entry at
+  the top after one,
   so recurring habits surface across sessions. The file's own header is the spec: entry
   format, tag vocabulary, and the recurrence threshold for raising a theme. Keep that header
   and the **Keeping the game log** section of `CLAUDE.md` in agreement.

@@ -24,25 +24,33 @@ export function ChatPane({ session }: { session: ReviewSession }) {
   const [thinking, setThinking] = useState(false);
   const [draft, setDraft] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
+  const [disconnected, setDisconnected] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
   useEffect(() => {
-    const stop = streamReview(session.id, (e: ReviewEvent) => {
-      setItems((prev) => reduce(prev, e));
-      if (e.type === "session") setSkills(e.skills);
-      if (e.type === "thinking") setThinking(true);
-      // "error" clears it too: an error is exactly when the agent loop ends, so
-      // leaving the spinner up would pair the ⚠ with a permanent "thinking…".
-      if (
-        e.type === "assistant_delta" ||
-        e.type === "assistant_text" ||
-        e.type === "turn_done" ||
-        e.type === "error"
-      ) {
-        setThinking(false);
-      }
-    });
+    const stop = streamReview(
+      session.id,
+      (e: ReviewEvent) => {
+        setItems((prev) => reduce(prev, e));
+        if (e.type === "session") setSkills(e.skills);
+        if (e.type === "thinking") setThinking(true);
+        // "error" clears it too: an error is exactly when the agent loop ends, so
+        // leaving the spinner up would pair the ⚠ with a permanent "thinking…".
+        if (
+          e.type === "assistant_delta" ||
+          e.type === "assistant_text" ||
+          e.type === "turn_done" ||
+          e.type === "error"
+        ) {
+          setThinking(false);
+        }
+      },
+      (connected) => {
+        setDisconnected(!connected);
+        if (!connected) setThinking(false);
+      },
+    );
     return stop;
   }, [session.id]);
 
@@ -113,6 +121,13 @@ export function ChatPane({ session }: { session: ReviewSession }) {
           <p className="tool running">
             <span className="dot" />
             thinking…
+          </p>
+        )}
+
+        {disconnected && (
+          <p className="tool error">
+            <span className="dot" />
+            connection lost — retrying. Anything the coach says meanwhile appears on reload.
           </p>
         )}
       </div>

@@ -1,7 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { ReviewEvent, SweepEvent } from "../shared/events.ts";
 import { storedUsername, lichessToken, TOKEN_SETUP_HELP } from "./config.ts";
-import { attach, closeSession, createSession, getSession, listSessionsForGame, sendUserTurn } from "./agent.ts";
+import {
+  attach,
+  cancelScheduledClose,
+  createSession,
+  getSession,
+  listSessionsForGame,
+  scheduleClose,
+  sendUserTurn,
+} from "./agent.ts";
 import { computeTrends, listEntries, rebuildIndex, skippedHeadings, themeVocab } from "./gamelog.ts";
 import { LichessError, fetchGames, getGame, listGames, upsertGames } from "./lichess.ts";
 import { boardHtml, traceSvg } from "./render.ts";
@@ -123,14 +131,15 @@ export function registerRoutes(app: FastifyInstance): void {
 
     const channel = openSse<ReviewEvent>(req, reply);
     const bus = attach(session.id, game);
+    cancelScheduledClose(session.id);
     const onEvent = (event: ReviewEvent) => channel.send(event);
     bus.on("event", onEvent);
     req.raw.on("close", () => {
       bus.off("event", onEvent);
       // Last viewer gone: stop the agent rather than leaving its process and
-      // queue resident for the life of the server. The next stream resumes it
-      // from the persisted agent session id.
-      if (bus.listenerCount("event") === 0) closeSession(session.id);
+      // queue resident for the life of the server — but after a grace window, so
+      // a navigation or a dropped connection doesn't abort a turn in flight.
+      if (bus.listenerCount("event") === 0) scheduleClose(session.id);
     });
   });
 
