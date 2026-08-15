@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Game, ReviewSession } from "@shared/events.ts";
 import { api, streamSweeps } from "../api.ts";
+import { plyLabel } from "../ply.ts";
 import { Board } from "./Board.tsx";
 import { ChatPane } from "./ChatPane.tsx";
 import { EvalTrace } from "./EvalTrace.tsx";
@@ -82,7 +83,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const currentFen = fens[ply] ?? START_FEN;
 
   return (
-    <section>
+    <section className="review-page">
       <div className="toolbar">
         <button className="btn ghost" onClick={onBack}>
           ← games
@@ -108,7 +109,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
       {error && <div className="card notice" style={{ marginBottom: 18 }}>{error}</div>}
 
       <div className="review">
-        <div>
+        <div className="board-col">
           <Board fen={currentFen} caption={`Position after ${ply} plies`} flip={game.userColor === "black"} />
 
           {swept ? (
@@ -131,7 +132,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                   </button>
                 </p>
               )}
-              <div className="toolbar" style={{ marginTop: 14 }}>
+              <div className="ply-nav">
                 <button className="btn ghost" onClick={() => setPly((p) => Math.max(0, p - 1))} disabled={ply === 0}>
                   ‹
                 </button>
@@ -141,7 +142,6 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                   max={Math.max(0, fens.length - 1)}
                   value={ply}
                   onChange={(e) => setPly(Number(e.target.value))}
-                  style={{ flex: 1 }}
                   aria-label="Ply"
                 />
                 <button
@@ -151,13 +151,14 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                 >
                   ›
                 </button>
-                <span className="num">
-                  {ply === 0 ? "start" : `${Math.ceil(ply / 2)}${ply % 2 ? "." : "..."} ${moves[ply - 1] ?? ""}`}
+                {/* Fixed-width in CSS — see .ply-nav .num. */}
+                <span className="num" title={plyLabel(ply, moves)}>
+                  {plyLabel(ply, moves)}
                 </span>
               </div>
 
               <h2 style={{ marginTop: 26 }}>Evaluation</h2>
-              <EvalTrace gameId={gameId} />
+              <EvalTrace gameId={gameId} ply={ply} plyCount={fens.length - 1} />
             </>
           ) : (
             <div className="card" style={{ marginTop: 16 }}>
@@ -198,9 +199,15 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
           )}
         </div>
 
-        <div>
+        <div className="chat-col">
           {session ? (
-            <ChatPane session={session} />
+            <ChatPane
+              session={session}
+              moves={moves}
+              fens={fens}
+              userColor={game.userColor}
+              onJump={setPly}
+            />
           ) : (
             <div className="card">
               <h2>Review</h2>

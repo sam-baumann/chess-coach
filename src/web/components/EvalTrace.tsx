@@ -8,8 +8,25 @@ import { useEffect, useState } from "react";
  *
  * `marks` are "ply:glyph" pairs, e.g. ["13:?", "39:??"]. Severity rides on the
  * glyph as well as the colour, so the marks stay legible without colour vision.
+ *
+ * The playhead is drawn over the SVG rather than inside it. eval_trace.py is
+ * shared with the published pages, which have no current ply — and the trace is
+ * emitted with preserveAspectRatio="none" against a 0..W viewBox, so a plain
+ * percentage lands exactly where the engine's own x for that ply lands.
  */
-export function EvalTrace({ gameId, marks = [] }: { gameId: string; marks?: string[] }) {
+export function EvalTrace({
+  gameId,
+  marks = [],
+  ply,
+  plyCount,
+}: {
+  gameId: string;
+  marks?: string[];
+  /** Board index to mark, 0 being the starting position. */
+  ply?: number;
+  /** Number of scanned plies — the trace's last x. */
+  plyCount?: number;
+}) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,5 +64,19 @@ export function EvalTrace({ gameId, marks = [] }: { gameId: string; marks?: stri
 
   if (error) return <p className="muted">{error}</p>;
   if (!svg) return <p className="muted">Loading trace…</p>;
-  return <div className="chart-box" dangerouslySetInnerHTML={{ __html: svg }} />;
+
+  // Row i of the scan sits at x = W·i/(n-1), and row i is the position after
+  // ply i+1 — so ply p is row p-1. Ply 0 is the start, which has no row of its
+  // own and pins to the left edge.
+  const head =
+    ply != null && plyCount != null && plyCount > 1
+      ? Math.min(100, Math.max(0, ((Math.max(1, ply) - 1) / (plyCount - 1)) * 100))
+      : null;
+
+  return (
+    <div className="chart-box">
+      <div dangerouslySetInnerHTML={{ __html: svg }} />
+      {head != null && <span className="playhead" style={{ left: `${head}%` }} aria-hidden="true" />}
+    </div>
+  );
 }

@@ -9,7 +9,7 @@
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
     "lint": "eslint src",
-    "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/server/**/*.test.ts\""
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",

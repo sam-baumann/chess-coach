@@ -56,7 +56,10 @@ body {
 }
 
 /* ---- chrome ---- */
-.app { max-width: 1240px; margin: 0 auto; padding: 0 24px 64px; }
+.app {
+  max-width: 1240px; margin: 0 auto; padding: 0 24px 24px;
+  min-height: 100dvh; display: flex; flex-direction: column;
+}
 
 header.top {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -142,8 +145,31 @@ table.games tbody tr { cursor: pointer; }
 .bar > i { display: block; height: 100%; background: var(--accent); transition: width .25s; }
 
 /* ---- review layout ---- */
-.review { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 28px; align-items: start; }
+/* The review fills the viewport rather than being sized by a magic offset: .app
+   is a full-height column, the page and grid grow into what's left, and the chat
+   takes its height from the grid cell. Padding is inside that budget (border-box
+   + min-height), so nothing has to be subtracted by hand — the old
+   `calc(100vh - 190px)` under-counted the chrome and pushed the composer just
+   below the fold. */
+.review-page { flex: 1; display: flex; flex-direction: column; }
+.review {
+  display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 28px;
+  align-items: stretch; flex: 1;
+}
+.review > .board-col { align-self: start; }
+.review > .chat-col { display: flex; flex-direction: column; }
 @media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+
+/* Ply nav: the arrows hold station. The move readout is the only variable-width
+   thing here ("start" vs "13... Ngxf3+"), so it gets a fixed box — left to size
+   itself it shoves the slider, and the › button lands somewhere new on every
+   press, which is exactly the button being clicked repeatedly. */
+.ply-nav { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.ply-nav input[type="range"] { flex: 1; min-width: 0; }
+.ply-nav .num {
+  flex: none; width: 108px; text-align: right; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
 
 .board {
   display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); aspect-ratio: 1; width: 100%;
@@ -170,8 +196,29 @@ table.games tbody tr { cursor: pointer; }
 .pc.b { color: var(--pc-b); text-shadow: 0 1px 1px rgba(255,255,255,.18); }
 
 /* ---- eval trace (classes emitted by eval_trace.py) ---- */
-.chart-box { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); border-radius: 2px; }
-svg.trace { display: block; width: 100%; height: auto; min-width: 560px; }
+/* The trace is drawn with preserveAspectRatio="none" precisely so it can be
+   poured into whatever box it is given. Sizing it to the column rather than to a
+   560px floor is what keeps it under the board without a scrollbar — the board
+   column tops out at 420px, so any floor above that guarantees one. */
+.chart-box {
+  overflow: hidden; border: 1px solid var(--rule); background: var(--surface);
+  border-radius: 2px; position: relative;
+}
+svg.trace { display: block; width: 100%; height: 124px; min-width: 0; }
+
+/* Playhead: where the board currently stands. Deliberately NOT --bad/--warn —
+   those are reserved for move severity, and a red line here would read as a
+   blunder marker. Accent, and thin enough to sit under the ? and ?? stems. */
+.playhead {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--accent); opacity: .75; pointer-events: none;
+  transform: translateX(-.5px);
+}
+.playhead::before {
+  content: ""; position: absolute; top: -3px; left: -2.5px;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+  border-top: 4px solid var(--accent);
+}
 .area-w { fill: var(--fill-w); }
 .area-b { fill: var(--fill-b); opacity: .9; }
 .mid { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
@@ -193,7 +240,7 @@ svg.trace { display: block; width: 100%; height: auto; min-width: 560px; }
 #cross, #dot { opacity: 0; }
 
 /* ---- chat ---- */
-.chat { display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 460px; }
+.chat { display: flex; flex-direction: column; flex: 1; min-height: 420px; }
 .chat-log { flex: 1; overflow-y: auto; padding-right: 8px; }
 .msg { margin: 0 0 22px; }
 .msg .who {
@@ -201,10 +248,49 @@ svg.trace { display: block; width: 100%; height: auto; min-width: 560px; }
   text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px;
 }
 .msg.user .who { color: var(--accent); }
-.msg .body { white-space: pre-wrap; }
 .msg.user .body {
   border-left: 2px solid var(--accent); padding-left: 13px; color: var(--ink-2);
 }
+
+/* ---- rendered markdown in the transcript ---- */
+/* pre-wrap lives on the paragraph, not the message: block structure is the
+   renderer's job now, but a hard-wrapped line inside one paragraph still has to
+   keep its break. */
+.md-p { white-space: pre-wrap; margin: 0 0 12px; }
+.msg .body > *:last-child { margin-bottom: 0; }
+.md-h {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-2); margin: 18px 0 8px;
+}
+.md-list { margin: 0 0 12px; padding-left: 22px; }
+.md-list li { margin-bottom: 5px; }
+.md-quote {
+  margin: 0 0 12px; padding-left: 13px; border-left: 2px solid var(--rule);
+  color: var(--ink-2); white-space: pre-wrap;
+}
+.md-rule { border: 0; border-top: 1px solid var(--rule); margin: 18px 0; }
+.md-code {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 2px;
+  padding: 10px 12px; margin: 0 0 12px; overflow-x: auto; white-space: pre;
+}
+.md-code-inline {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+  background: var(--accent-soft); border-radius: 2px; padding: 1px 5px;
+}
+.msg .body a { color: var(--accent); }
+
+/* Position links: the board is the point, so these read as a control rather
+   than as prose — but inline, so a sentence still scans as a sentence. */
+.ply-link {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--rule); border-radius: 2px;
+  padding: 1px 6px; cursor: pointer; white-space: nowrap;
+}
+.ply-link:hover { border-color: var(--accent); filter: brightness(1.04); }
+.ply-link.block { font-size: 13px; padding: 5px 11px; }
+.fen-line { margin: 0 0 12px; }
 
 .tool {
   display: flex; align-items: center; gap: 9px; margin: 0 0 10px;

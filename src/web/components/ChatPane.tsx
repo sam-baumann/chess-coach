@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import type { ReviewEvent, ReviewSession } from "@shared/events.ts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Game, ReviewEvent, ReviewSession } from "@shared/events.ts";
 import { api, streamReview } from "../api.ts";
+import { plyLabel, plyOf } from "../ply.ts";
+import { Markdown, type Jump } from "./Markdown.tsx";
 
 type Item =
   | { kind: "message"; id: string; role: "user" | "assistant"; text: string }
@@ -12,7 +14,19 @@ type Item =
  * "probing 4 moment(s) at depth 22" on screen that is indistinguishable from a
  * hang.
  */
-export function ChatPane({ session }: { session: ReviewSession }) {
+export function ChatPane({
+  session,
+  moves,
+  fens,
+  userColor,
+  onJump,
+}: {
+  session: ReviewSession;
+  moves: string[];
+  fens: string[];
+  userColor: Game["userColor"];
+  onJump: (ply: number) => void;
+}) {
   const [items, setItems] = useState<Item[]>(() =>
     session.messages.map((m) => ({
       kind: "message" as const,
@@ -27,6 +41,33 @@ export function ChatPane({ session }: { session: ReviewSession }) {
   const [disconnected, setDisconnected] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+
+  /**
+   * Position references in the coach's replies become board jumps. Without the
+   * sweep there are no positions to jump to, so the links stay plain text
+   * rather than becoming buttons that do nothing.
+   */
+  const jump = useMemo<Jump | undefined>(() => {
+    if (fens.length <= 1) return undefined;
+
+    // Keyed on the first four FEN fields: the half-move and full-move counters
+    // differ between what the agent quotes and what the scan stored often
+    // enough to matter, and they don't identify the position anyway.
+    const key = (fen: string) => fen.trim().split(/\s+/).slice(0, 4).join(" ");
+    const byFen = new Map(fens.map((f, i) => [key(f), i]));
+
+    return {
+      resolveFen: (fen) => byFen.get(key(fen)) ?? null,
+      resolveMove: (moveNumber, black) => {
+        // A bare "move 13" doesn't say which side; the coach is nearly always
+        // talking about the user's own move, so that is the reading taken.
+        const ply = plyOf(moveNumber, black ?? userColor === "black");
+        return ply > 0 && ply < fens.length ? ply : null;
+      },
+      label: (ply) => plyLabel(ply, moves),
+      onJump,
+    };
+  }, [fens, moves, userColor, onJump]);
 
   useEffect(() => {
     const stop = streamReview(
@@ -115,7 +156,9 @@ export function ChatPane({ session }: { session: ReviewSession }) {
           ) : (
             <div key={item.id} className={`msg ${item.role}`}>
               <div className="who">{item.role === "user" ? "you" : "coach"}</div>
-              <div className="body">{item.text}</div>
+              <div className="body">
+                <Markdown text={item.text} jump={jump} />
+              </div>
             </div>
           ),
         )}
@@ -141,7 +184,9 @@ export function ChatPane({ session }: { session: ReviewSession }) {
           onChange={(e) => setDraft(e.target.value)}
           placeholder="What were you thinking on move…?"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            // Enter sends; Shift+Enter is the newline. isComposing guards IME
+            // input, where Enter commits the candidate and must not also send.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void send();
             }
