@@ -133,7 +133,7 @@ caption{caption-side:bottom; padding:10px 14px; font-size:12px; color:var(--ink-
 .moment:first-of-type{border-top:2px solid var(--ink)}
 @media (max-width:820px){ .moment{grid-template-columns:1fr; gap:24px} }
 
-.board{display:grid; grid-template-columns:repeat(8,1fr); aspect-ratio:1; width:100%; border:1px solid var(--rule); border-radius:2px; overflow:hidden}
+.board{display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); aspect-ratio:1; width:100%; border:1px solid var(--rule); border-radius:2px; overflow:hidden}
 .sq{display:flex; align-items:center; justify-content:center; position:relative}
 .sq.l{background:var(--sq-l)} .sq.d{background:var(--sq-d)}
 .sq.hl::after{content:""; position:absolute; inset:0; background:var(--hl); opacity:.42; pointer-events:none}
