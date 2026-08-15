@@ -144,16 +144,25 @@ export async function startSweep(
     return { status: "unavailable", message: stockfishMissingHelp() };
   }
 
-  ensureDirs();
-  setStatus(gameId, { status: "running", progress: 0, depth });
-
-  // Written to a temp path and renamed on a clean exit. Truncating the real file
-  // at spawn time would destroy a good scan the moment a re-sweep is started —
-  // and if that run then fails, the trace and scrubber that worked a minute ago
-  // are gone with nothing to fall back on.
+  // Anything throwing between the claim above and the spawn below must release
+  // the slot: otherwise the id is held forever and every later request for this
+  // game returns "already-running" with a bar that never moves, until a restart.
+  let out: ReturnType<typeof createWriteStream>;
   const finalPath = scanPath(gameId);
   const tmpPath = `${finalPath}.partial`;
-  const out = createWriteStream(tmpPath);
+  try {
+    ensureDirs();
+    setStatus(gameId, { status: "running", progress: 0, depth });
+    // Written to a temp path and renamed on a clean exit. Truncating the real
+    // file at spawn would destroy a good scan the moment a re-sweep starts — and
+    // if that run then failed, the trace and scrubber that worked a minute ago
+    // would be gone with nothing to fall back on.
+    out = createWriteStream(tmpPath);
+  } catch (err) {
+    running.delete(gameId);
+    throw err;
+  }
+
   const child = spawn(
     "uv",
     ["run", "--with", "chess", "python", SCAN_SCRIPT, "--moves", moves, "--depth", String(depth)],

@@ -73,7 +73,11 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const running =
     sweepProgress ?? (game.sweep?.status === "running" ? game.sweep.progress : null);
 
-  const swept = game.sweep?.status === "done";
+  // Keyed on the scan actually being there, not on the last run's status. A failed
+  // re-sweep leaves the *previous* scan intact on disk (sweep.ts writes to a
+  // .partial file and renames only on success) — gating on status === "done"
+  // would hide a board and trace the server is still happily serving.
+  const swept = fens.length > 1;
   const moves = game.moves.split(" ").filter(Boolean);
   const currentFen = fens[ply] ?? START_FEN;
 
@@ -109,6 +113,24 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
 
           {swept ? (
             <>
+              {/* The scan below is the previous one; say so rather than letting a
+                  failed re-sweep look like it succeeded. */}
+              {game.sweep?.status === "failed" && (
+                <p className="err" style={{ margin: "12px 0 0", fontSize: 13 }}>
+                  The last sweep failed — showing the previous one.{" "}
+                  <button
+                    className="btn ghost"
+                    onClick={() =>
+                      void api
+                        .startSweep(gameId, true)
+                        .then(() => setSweepProgress(0))
+                        .catch((e: Error) => setError(e.message))
+                    }
+                  >
+                    retry
+                  </button>
+                </p>
+              )}
               <div className="toolbar" style={{ marginTop: 14 }}>
                 <button className="btn ghost" onClick={() => setPly((p) => Math.max(0, p - 1))} disabled={ply === 0}>
                   ‹

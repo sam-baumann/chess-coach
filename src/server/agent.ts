@@ -164,6 +164,8 @@ interface LiveSession {
    */
   textBlockIndexes: number[];
   textBlockCursor: number;
+  /** Monotonic id source for text blocks that no stream event accounted for. */
+  unmatchedBlockSeq: number;
 }
 
 const live = new Map<string, LiveSession>();
@@ -279,16 +281,19 @@ function toReviewEvents(msg: SDKMessage, session: LiveSession): ReviewEvent[] {
 
   if (msg.type === "assistant") {
     const sameMessage = msg.message.id === session.streamMessageId;
-    for (const [i, block] of msg.message.content.entries()) {
+    for (const block of msg.message.content) {
       if (block.type === "text") {
         // Resolve the block's *stream* index, so the complete text replaces the
         // deltas in place instead of appending a duplicate bubble. The cursor
         // advances for every text block, empty ones included — content_block_start
         // recorded those too, and skipping them here would shift each later block
         // onto the wrong index.
-        const streamIndex = sameMessage
-          ? (session.textBlockIndexes[session.textBlockCursor++] ?? i)
-          : i;
+        // The fallback cannot be `i`: the CLI sends one block per assistant
+        // message, so `i` is always 0 and every block of an unmatched message
+        // would collapse onto the same id — and the reducer *replaces* on a
+        // match, so a multi-paragraph reply would render as its last paragraph.
+        const mapped = sameMessage ? session.textBlockIndexes[session.textBlockCursor++] : undefined;
+        const streamIndex = mapped ?? `u${session.unmatchedBlockSeq++}`;
         if (block.text.trim()) {
           events.push({
             type: "assistant_text",
@@ -466,6 +471,7 @@ export function attach(sessionId: string, game: Game): EventEmitter {
     streamMessageId: null,
     textBlockIndexes: [],
     textBlockCursor: 0,
+    unmatchedBlockSeq: 0,
   };
   live.set(sessionId, session);
 
@@ -496,6 +502,11 @@ export function sendUserTurn(sessionId: string, game: Game, text: string): void 
 
   const s = live.get(sessionId);
   if (!s) return;
+
+  // Only the SSE route's close handler schedules teardown. A client that posts
+  // without ever opening the stream (EventSource blocked, or a non-browser
+  // caller) would otherwise leave the agent resident for the server's lifetime.
+  if ((buses.get(sessionId)?.listenerCount("event") ?? 0) === 0) scheduleClose(sessionId);
 
   // The system prompt is fixed at attach() time, so a session opened before or
   // during a sweep is stuck being told no sweep exists. Correct it on the next

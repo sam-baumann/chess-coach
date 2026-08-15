@@ -22,8 +22,15 @@ export function EvalTrace({ gameId, marks = [] }: { gameId: string; marks?: stri
 
     fetch(`/api/games/${gameId}/trace.svg?${params}`)
       .then(async (res) => {
-        if (!res.ok) throw new Error("No sweep yet — run one to see the evaluation trace.");
-        return res.text();
+        if (res.ok) return res.text();
+        // Only a 404 means "no sweep". Anything else is a real failure — most
+        // likely eval_trace.py refusing a game too short to draw — and telling
+        // the user to run a sweep they've already run isn't actionable.
+        if (res.status === 404) {
+          throw new Error("No sweep yet — run one to see the evaluation trace.");
+        }
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `The trace could not be drawn (${res.status}).`);
       })
       .then((text) => {
         if (!cancelled) {

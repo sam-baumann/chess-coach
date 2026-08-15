@@ -90,8 +90,14 @@ export function registerRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const game = getGame(req.params.id);
       if (!game) return reply.code(404).send({ error: "Unknown game" });
+      // Validated rather than forwarded: a non-scalar reaches node:sqlite's bind
+      // and throws, and depth drives engine time — 40 would run for hours.
+      const rawDepth = req.body?.depth;
+      if (rawDepth !== undefined && (!Number.isInteger(rawDepth) || rawDepth < 1 || rawDepth > 30)) {
+        return reply.code(400).send({ error: "depth must be an integer between 1 and 30" });
+      }
       const result = await startSweep(game.id, game.moves, {
-        depth: req.body?.depth,
+        depth: rawDepth,
         force: req.body?.force,
       });
       if (result.status === "unavailable") {
