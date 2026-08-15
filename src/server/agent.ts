@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import {
   query,
-  type CanUseTool,
+  type HookCallback,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -42,29 +42,41 @@ const ALLOWED_TOOLS = [
 /**
  * A blunt guard against the obvious footguns; this is a local single-user app.
  *
- * It has to be a `canUseTool` callback, not `disallowedTools`: that option takes
- * tool *names* and removes them wholesale, so entries like "Bash(rm -rf *)"
- * match nothing and silently guarantee nothing. `permissionMode: "dontAsk"` with
- * bare "Bash" allowed pre-approves every command, so this is the only hook left.
+ * It has to be a PreToolUse hook. `disallowedTools` takes tool *names*, so
+ * "Bash(rm -rf *)" matches nothing; and a `canUseTool` callback is never
+ * consulted here, because a bare "Bash" in `allowedTools` auto-approves the
+ * whole tool first — the SDK warns about exactly this
+ * (CLAUDE_SDK_CAN_USE_TOOL_SHADOWED). A hook runs regardless.
  */
 const BLOCKED_COMMANDS: { pattern: RegExp; why: string }[] = [
-  { pattern: /\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rR]/, why: "recursive delete" },
+  // Covers -r, -R, -fr, --recursive, and flags trailing the path ("rm dir -r").
+  { pattern: /\brm\b(?=[^\n]*(?:\s-[a-zA-Z]*[rR]|\s--recursive\b))/, why: "recursive delete" },
   { pattern: /\bsudo\b/, why: "sudo" },
-  { pattern: /\bgit\s+(-\S+\s+)*push\b/, why: "git push" },
+  { pattern: /\bgit\b[^\n]*\bpush\b/, why: "git push" },
 ];
 
-const canUseTool: CanUseTool = async (toolName, input) => {
-  if (toolName !== "Bash") return { behavior: "allow", updatedInput: input };
-  const command = typeof input.command === "string" ? input.command : "";
+export function blockedReason(toolName: string, input: unknown): string | null {
+  if (toolName !== "Bash") return null;
+  const command = (input as { command?: unknown } | null)?.command;
+  if (typeof command !== "string") return null;
   for (const { pattern, why } of BLOCKED_COMMANDS) {
-    if (pattern.test(command)) {
-      return {
-        behavior: "deny",
-        message: `Blocked by the hub: ${why} is not available in a review session.`,
-      };
-    }
+    if (pattern.test(command)) return why;
   }
-  return { behavior: "allow", updatedInput: input };
+  return null;
+}
+
+const guardBash: HookCallback = async (input) => {
+  if (input.hook_event_name !== "PreToolUse") return { continue: true };
+  const why = blockedReason(input.tool_name, input.tool_input);
+  if (!why) return { continue: true };
+  return {
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: `Blocked by the hub: ${why} is not available in a review session.`,
+    },
+  };
 };
 
 function hubContext(game: Game, scanRelPath: string | null): string {
@@ -430,7 +442,7 @@ export function attach(sessionId: string, game: Game): EventEmitter {
       model: process.env.HUB_MODEL ?? "claude-opus-5",
       permissionMode: "dontAsk",
       allowedTools: ALLOWED_TOOLS,
-      canUseTool,
+      hooks: { PreToolUse: [{ hooks: [guardBash] }] },
       includePartialMessages: true,
       systemPrompt: {
         type: "preset",

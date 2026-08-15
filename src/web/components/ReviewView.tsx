@@ -42,6 +42,10 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
       if (e.type === "sweep_failed") {
         setSweepProgress(null);
         setError(e.error);
+        // Reload too: `running` falls back to game.sweep.progress, so without a
+        // refresh the panel keeps showing a frozen bar at the last percentage
+        // and the retry button stays unreachable.
+        void load();
       }
     });
   }, [gameId, load]);

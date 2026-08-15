@@ -163,10 +163,17 @@ export function parseGameLog(text: string): ParsedLog {
       if (!line.startsWith(prefix)) continue;
       const value = line.slice(prefix.length).trim();
       if (field === "themes") {
-        current.themes = value
-          .split(",")
-          .map((t) => t.trim().replace(/^`|`$/g, ""))
-          .filter(Boolean);
+        // Deduped here rather than only at count time: a repeat is one game
+        // either way, and it keeps log_entry_themes and the rendered tag list
+        // free of duplicates (which React keys by tag).
+        current.themes = [
+          ...new Set(
+            value
+              .split(",")
+              .map((t) => t.trim().replace(/^`|`$/g, ""))
+              .filter(Boolean),
+          ),
+        ];
       } else if (field === "gameUrl") {
         current.gameUrl = value || null;
       } else {
@@ -383,6 +390,11 @@ export function pickRecurring(
   for (const { tag, count } of themeCounts) {
     if (count >= 3) return found(tag, count, "three-or-more");
   }
+
+  // "Two of the last three" needs three to have happened. On a two-entry log the
+  // rule would fire on the very first repeat and announce a habit — the "don't
+  // manufacture a pattern from two coincidences" case this function exists for.
+  if (entries.length < 3) return null;
 
   const recent = countThemes(entries.slice(0, 3));
   for (const { tag, count } of themeCounts) {

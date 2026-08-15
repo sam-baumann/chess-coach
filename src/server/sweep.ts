@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, readFileSync } from "node:fs";
+import { createWriteStream, existsSync, readFileSync, renameSync, rm } from "node:fs";
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import type { SweepEvent, SweepStatus } from "../shared/events.ts";
@@ -147,7 +147,13 @@ export async function startSweep(
   ensureDirs();
   setStatus(gameId, { status: "running", progress: 0, depth });
 
-  const out = createWriteStream(scanPath(gameId));
+  // Written to a temp path and renamed on a clean exit. Truncating the real file
+  // at spawn time would destroy a good scan the moment a re-sweep is started —
+  // and if that run then fails, the trace and scrubber that worked a minute ago
+  // are gone with nothing to fall back on.
+  const finalPath = scanPath(gameId);
+  const tmpPath = `${finalPath}.partial`;
+  const out = createWriteStream(tmpPath);
   const child = spawn(
     "uv",
     ["run", "--with", "chess", "python", SCAN_SCRIPT, "--moves", moves, "--depth", String(depth)],
@@ -168,6 +174,7 @@ export async function startSweep(
     failed = true;
     running.delete(gameId);
     child.kill();
+    rm(tmpPath, { force: true }, () => {});
     const message = `Could not write the scan file: ${err.message}`;
     setStatus(gameId, { status: "failed", error: message, depth });
     emit({ type: "sweep_failed", gameId, error: message });
@@ -212,14 +219,20 @@ export async function startSweep(
     emit({ type: "sweep_failed", gameId, error: message });
   });
 
+  /** Drop the partial file; a previous good scan at finalPath is left untouched. */
+  const discardPartial = () => {
+    out.end();
+    rm(tmpPath, { force: true }, () => {});
+  };
+
   child.on("close", (code) => {
     running.delete(gameId);
     if (failed) {
-      out.end();
+      discardPartial();
       return;
     }
     if (code !== 0) {
-      out.end();
+      discardPartial();
       const message = `scan_game.py exited ${code}.\n${stderrTail.trim()}`;
       setStatus(gameId, { status: "failed", error: message, depth });
       emit({ type: "sweep_failed", gameId, error: message });
@@ -229,6 +242,16 @@ export async function startSweep(
     // mean the piped write stream has flushed, and a reader reacting to
     // sweep_done would hit truncated JSON — which readScan turns into a silent null.
     const announceDone = () => {
+      // The rename is what makes the new scan visible, so it happens before the
+      // event that sends readers to the file.
+      try {
+        renameSync(tmpPath, finalPath);
+      } catch (err) {
+        const message = `Could not save the scan file: ${err instanceof Error ? err.message : String(err)}`;
+        setStatus(gameId, { status: "failed", error: message, depth });
+        emit({ type: "sweep_failed", gameId, error: message });
+        return;
+      }
       setStatus(gameId, { status: "done", progress: 1, depth });
       emit({ type: "sweep_done", gameId });
     };

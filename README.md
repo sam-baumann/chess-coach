@@ -38,5 +38,12 @@ one you get in the terminal, not a reimplementation of them.
 - Claude credentials for the agent — an `ANTHROPIC_API_KEY`, or an existing Claude Code login.
 
 Your notes stay where they were. `notes/game-log.md` remains the source of truth the coach
-reads and appends to; the hub derives a read-only index from it and rebuilds when the file
-changes. Nothing in `data/` is tracked — delete it and it rebuilds.
+reads and writes to — newest entry first — and the hub derives a read-only index from it,
+rebuilt whenever the file changes. That index is the only part of `data/` that is
+disposable.
+
+`data/` is untracked but **not** disposable as a whole. Alongside the index it holds your
+fetched games, every review transcript, and the completed engine sweeps in
+`data/sweeps/` — each of which cost minutes of engine time and none of which can be
+rebuilt from the log. To rebuild just the index, call `POST /api/log/reindex` or restart
+the server; deleting `data/` throws away the rest.

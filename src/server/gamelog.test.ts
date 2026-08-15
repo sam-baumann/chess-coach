@@ -173,6 +173,16 @@ test("two of the last three qualifies even at a total count of two", () => {
   assert.equal(r?.reason, "two-of-last-three");
 });
 
+test("two-of-last-three needs three entries to have happened", () => {
+  // The whole point of the threshold: on a two-game log the first repeat is a
+  // coincidence, and announcing it as a habit is what the log warns against.
+  assert.equal(pickRecurring([e("king-safety"), e("king-safety")], VOCAB), null);
+  // A third entry without the tag still doesn't qualify it by count alone,
+  // but now the window is real and two-of-three applies.
+  const r = pickRecurring([e("king-safety"), e("king-safety"), e("x")], VOCAB);
+  assert.equal(r?.reason, "two-of-last-three");
+});
+
 test("two-of-last-three only looks at the newest three entries", () => {
   // Same two appearances, but now at positions 3 and 5 — outside the window.
   const entries = [e("x"), e("y"), e("z"), e("loose-pieces"), e("loose-pieces")];
