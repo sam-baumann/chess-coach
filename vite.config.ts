@@ -19,8 +19,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3001",
-      "/reviews": "http://localhost:3001",
+      // Trailing slash matters: a bare "/api" prefix also matches the
+      // /api.ts source module (Vite's proxy match is a plain startsWith),
+      // shadowing it behind the backend and 404ing on import.
+      "/api/": "http://localhost:3001",
+      "/reviews/": "http://localhost:3001",
     },
   },
 });
