@@ -47,7 +47,16 @@ export const api = {
 
   game: (id: string) =>
     fetch(`/api/games/${id}`).then(
-      json<{ game: Game; scan: { rows: { ply: number; fen_after: string }[] } | null; sessions: ReviewSession[] }>,
+      json<{
+        game: Game;
+        // A subset of scan_game.py's row. wcp_after is White's point of view,
+        // which is what the trace is drawn in; eval_before is read for row 0
+        // alone, since the starting position has no row of its own.
+        scan: {
+          rows: { ply: number; fen_after: string; wcp_after: number; eval_before: number }[];
+        } | null;
+        sessions: ReviewSession[];
+      }>,
     ),
 
   startSweep: (id: string, force = false) => post(`/api/games/${id}/sweep`, { force }).then(json<{ status: string }>),

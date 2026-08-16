@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Game, ReviewSession } from "@shared/events.ts";
 import { api, streamSweeps } from "../api.ts";
 import { plyLabel } from "../ply.ts";
@@ -8,23 +8,46 @@ import { EvalTrace } from "./EvalTrace.tsx";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+/** The scan rows the review reads — a subset of what scan_game.py writes. */
+type Row = { ply: number; fen_after: string; wcp_after: number; eval_before: number };
+
 export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => void }) {
   const [game, setGame] = useState<Game | null>(null);
-  const [fens, setFens] = useState<string[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [ply, setPly] = useState(0);
   const [session, setSession] = useState<ReviewSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sweepProgress, setSweepProgress] = useState<number | null>(null);
+  /** A position from the chat that the game never reached, or null for the game. */
+  const [offGameFen, setOffGameFen] = useState<string | null>(null);
 
   const load = useMemo(
     () => async () => {
       const r = await api.game(gameId);
       setGame(r.game);
-      setFens(r.scan ? [START_FEN, ...r.scan.rows.map((row) => row.fen_after)] : []);
+      setRows(r.scan?.rows ?? []);
       setSession(r.sessions[0] ?? null);
     },
     [gameId],
   );
+
+  const fens = useMemo(
+    () => (rows.length ? [START_FEN, ...rows.map((row) => row.fen_after)] : []),
+    [rows],
+  );
+
+  /**
+   * Moving through the real game is also how you leave a position that isn't in
+   * it. The board is the only thing that can be showing a what-if, so the arrows,
+   * the slider and a position link in the chat all mean "back to the game" —
+   * otherwise the way out would be a control the user has to notice first.
+   */
+  const toPly = useCallback((next: number) => {
+    setOffGameFen(null);
+    setPly(next);
+  }, []);
+
+  const showFen = useCallback((fen: string) => setOffGameFen(fen), []);
 
   useEffect(() => {
     void load().catch((e: Error) => setError(e.message));
@@ -82,6 +105,13 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const moves = game.moves.split(" ").filter(Boolean);
   const currentFen = fens[ply] ?? START_FEN;
 
+  const boardFen = offGameFen ?? currentFen;
+
+  // Ply 0 is the starting position, which has no row of its own; row 1's
+  // eval_before is that position, and it is already White's point of view
+  // because White is the mover there.
+  const wcp = !rows.length ? null : ply <= 0 ? rows[0].eval_before : (rows[ply - 1]?.wcp_after ?? null);
+
   return (
     <section className="review-page">
       <div className="toolbar">
@@ -109,8 +139,14 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
       {error && <div className="card notice" style={{ marginBottom: 18 }}>{error}</div>}
 
       <div className="review">
-        <div className="board-col">
-          <Board fen={currentFen} caption={`Position after ${ply} plies`} flip={game.userColor === "black"} />
+        {/* The frame is the only marker that the board has left the game — no
+            panel, no strip. An arrow brings it back. */}
+        <div className={`board-col${offGameFen ? " off-game" : ""}`}>
+          <Board
+            fen={boardFen}
+            caption={offGameFen ? "A position from the chat, not played in the game" : `Position after ${ply} plies`}
+            flip={game.userColor === "black"}
+          />
 
           {swept ? (
             <>
@@ -132,8 +168,9 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                   </button>
                 </p>
               )}
+              {/* Always the *game's* nav, variation or not — see toPly. */}
               <div className="ply-nav">
-                <button className="btn ghost" onClick={() => setPly((p) => Math.max(0, p - 1))} disabled={ply === 0}>
+                <button className="btn ghost" onClick={() => toPly(Math.max(0, ply - 1))} disabled={ply === 0}>
                   ‹
                 </button>
                 <input
@@ -141,24 +178,39 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                   min={0}
                   max={Math.max(0, fens.length - 1)}
                   value={ply}
-                  onChange={(e) => setPly(Number(e.target.value))}
+                  onChange={(e) => toPly(Number(e.target.value))}
                   aria-label="Ply"
                 />
                 <button
                   className="btn ghost"
-                  onClick={() => setPly((p) => Math.min(fens.length - 1, p + 1))}
+                  onClick={() => toPly(Math.min(fens.length - 1, ply + 1))}
                   disabled={ply >= fens.length - 1}
                 >
                   ›
                 </button>
-                {/* Fixed-width in CSS — see .ply-nav .num. */}
-                <span className="num" title={plyLabel(ply, moves)}>
-                  {plyLabel(ply, moves)}
+                {/* Fixed-width in CSS — see .ply-nav .num. While the board is off
+                    the game it would be naming a move that isn't on screen, so it
+                    says so instead. */}
+                <span
+                  className="num"
+                  title={
+                    offGameFen
+                      ? "The board is showing a position from the chat — an arrow returns to the game"
+                      : plyLabel(ply, moves)
+                  }
+                >
+                  {/* Eleven characters, because the box is sized for "13... Ngxf3+"
+                      and anything longer ellipsises to "not in the ga…". */}
+                  {offGameFen ? "not in game" : plyLabel(ply, moves)}
                 </span>
               </div>
 
               <h2 style={{ marginTop: 26 }}>Evaluation</h2>
-              <EvalTrace gameId={gameId} ply={ply} plyCount={fens.length - 1} />
+              {/* The number is the game's, at the current ply. The trace is the
+                  game's too, so it stays put when the board shows a what-if —
+                  that position has no eval, and borrowing a nearby one would be
+                  worse than showing nothing. */}
+              <EvalTrace gameId={gameId} ply={ply} plyCount={fens.length - 1} wcp={wcp} />
             </>
           ) : (
             <div className="card" style={{ marginTop: 16 }}>
@@ -206,7 +258,8 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
               moves={moves}
               fens={fens}
               userColor={game.userColor}
-              onJump={setPly}
+              onJump={toPly}
+              onFen={showFen}
             />
           ) : (
             <div className="card">

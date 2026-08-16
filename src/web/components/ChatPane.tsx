@@ -20,12 +20,15 @@ export function ChatPane({
   fens,
   userColor,
   onJump,
+  onFen,
 }: {
   session: ReviewSession;
   moves: string[];
   fens: string[];
   userColor: Game["userColor"];
   onJump: (ply: number) => void;
+  /** Show a position the coach quoted that the game never reached. */
+  onFen: (fen: string) => void;
 }) {
   const [items, setItems] = useState<Item[]>(() =>
     session.messages.map((m) => ({
@@ -44,11 +47,12 @@ export function ChatPane({
 
   /**
    * Position references in the coach's replies become board jumps. Without the
-   * sweep there are no positions to jump to, so the links stay plain text
-   * rather than becoming buttons that do nothing.
+   * sweep there are no scanned positions to jump to, so move references resolve
+   * to null and stay plain text rather than becoming buttons that do nothing —
+   * but a quoted FEN still opens on the board, since showing one needs no scan.
    */
-  const jump = useMemo<Jump | undefined>(() => {
-    if (fens.length <= 1) return undefined;
+  const jump = useMemo<Jump>(() => {
+    const swept = fens.length > 1;
 
     // Keyed on the first four FEN fields: the half-move and full-move counters
     // differ between what the agent quotes and what the scan stored often
@@ -57,17 +61,18 @@ export function ChatPane({
     const byFen = new Map(fens.map((f, i) => [key(f), i]));
 
     return {
-      resolveFen: (fen) => byFen.get(key(fen)) ?? null,
+      resolveFen: (fen) => (swept ? byFen.get(key(fen)) ?? null : null),
       resolveMove: (moveNumber, black) => {
         // A bare "move 13" doesn't say which side; the coach is nearly always
         // talking about the user's own move, so that is the reading taken.
         const ply = plyOf(moveNumber, black ?? userColor === "black");
-        return ply > 0 && ply < fens.length ? ply : null;
+        return swept && ply > 0 && ply < fens.length ? ply : null;
       },
       label: (ply) => plyLabel(ply, moves),
       onJump,
+      onFen,
     };
-  }, [fens, moves, userColor, onJump]);
+  }, [fens, moves, userColor, onJump, onFen]);
 
   useEffect(() => {
     const stop = streamReview(

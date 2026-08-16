@@ -32,7 +32,7 @@ pnpm test        # node:test — game-log parser + recurrence rule
 **Skills (in `.claude/skills/`):**
 - `lichess-fetch` — fetches games/player data from the Lichess API via `curl`. Spec: `specs/lichess-api.json` (base URL `https://lichess.org`; some endpoints stream NDJSON; auth via Bearer token).
 - `stockfish-local` — installs Stockfish if missing, then evaluates positions by piping UCI commands into it. Spec: `specs/uci_spec.md` (communication via stdin/stdout: send `position`/`go`, read `bestmove`/`info` lines). Also ships `scripts/scan_game.py` and `scripts/probe_moments.py` for the two-pass whole-game sweep.
-- `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, and a both-themes preview/audit.
+- `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, replaying a line into positions, and a both-themes preview/audit.
 - `dev-mode` (this skill) — switches Claude out of the chess-coach persona for codebase work.
 
 **Coaching state (outside `.claude/`):**
@@ -85,7 +85,11 @@ own (three-plus games, or two of the last three) rather than "most common tag so
 
 **Board diagrams and the eval trace shell out to the `game-review` scripts** rather than being
 rebuilt in React — `render_board.py` and `eval_trace.py` already encode the solid-glyph,
-square-parity, and diverging-fill decisions. `src/web/theme.css` lifts the palette from
+square-parity, and diverging-fill decisions. A FEN in the coach's reply is clickable whether or
+not the scan holds it: one in the scan moves the scrubber, one the game never reached goes on
+the board on its own (framed, ply readout saying so) until any game navigation takes it back.
+That is the whole variation feature — no replay endpoint, no strip; the agent gets the FENs
+itself from `game-review/scripts/replay_line.py`. `src/web/theme.css` lifts the palette from
 `game-review/template.html` verbatim, all three blocks, so the app and the published pages
 match; dropping the un-stamped `prefers-color-scheme` block is the regression to watch for.
 

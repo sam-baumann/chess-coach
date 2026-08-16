@@ -28,6 +28,11 @@ export type Jump = {
   /** Scoresheet notation for a board index, used as the link's text. */
   label: (ply: number) => string;
   onJump: (ply: number) => void;
+  /**
+   * Put a position that isn't in the game on the board — the coach's "what if",
+   * quoted as a FEN. There is no ply for these, so they can't go through onJump.
+   */
+  onFen?: (fen: string) => void;
 };
 
 export function Markdown({ text, jump }: { text: string; jump?: Jump }) {
@@ -55,9 +60,14 @@ function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNo
     const ply =
       ref.kind === "fen" ? jump.resolveFen(ref.raw) : jump.resolveMove(ref.moveNumber, ref.black);
 
-    // Unresolvable references stay as plain text: a link that jumps the board
+    // A FEN the scan doesn't hold is a position the game never reached — the
+    // engine's recommendation, or a what-if the coach is arguing from. It still
+    // goes on the board; it just has no ply to move the scrubber to.
+    const offGame = ply == null && ref.kind === "fen" && jump.onFen;
+
+    // Anything else unresolvable stays plain text: a link that jumps the board
     // to the wrong position is worse than the notation the user already reads.
-    if (ply == null) continue;
+    if (ply == null && !offGame) continue;
 
     if (ref.start > last) out.push(text.slice(last, ref.start));
     out.push(
@@ -65,13 +75,14 @@ function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNo
         key={`${keyBase}:${ref.start}`}
         type="button"
         className="ply-link"
-        title={`Show the board at ${jump.label(ply)}`}
-        onClick={() => jump.onJump(ply)}
+        title={ply == null ? "Show this position on the board" : `Show the board at ${jump.label(ply)}`}
+        onClick={() => (ply == null ? jump.onFen?.(ref.raw) : jump.onJump(ply))}
       >
-        {/* A FEN is unreadable, so show the move it *is*. Notation the user
-            already typed or read stays verbatim — replacing it would make the
-            coach look like it said something else. */}
-        {ref.kind === "fen" ? jump.label(ply) : ref.raw}
+        {/* A FEN is unreadable, so show the move it *is* — or just "position"
+            when it isn't a move in this game. Notation the user already typed or
+            read stays verbatim; replacing it would make the coach look like it
+            said something else. */}
+        {ref.kind !== "fen" ? ref.raw : ply == null ? "position" : jump.label(ply)}
       </button>,
     );
     last = ref.end;
@@ -179,19 +190,21 @@ function renderBlock(b: Block, jump: Jump | undefined): ReactNode {
   switch (b.kind) {
     case "code": {
       // A fence holding nothing but a FEN is the case that started all this —
-      // render it as the position it denotes, not as a wall of slashes.
+      // render it as the position it denotes, not as a wall of slashes. That
+      // holds whether or not the position is one the game reached.
       const only = b.content.trim();
-      const ply = jump && isBareFen(only) ? jump.resolveFen(only) : null;
-      if (jump && ply != null) {
+      const bare = jump && isBareFen(only);
+      const ply = bare ? jump.resolveFen(only) : null;
+      if (bare && (ply != null || jump.onFen)) {
         return (
           <p className="fen-line">
             <button
               type="button"
               className="ply-link block"
-              title={`Show the board at ${jump.label(ply)}`}
-              onClick={() => jump.onJump(ply)}
+              title={ply == null ? "Show this position on the board" : `Show the board at ${jump.label(ply)}`}
+              onClick={() => (ply == null ? jump.onFen?.(only) : jump.onJump(ply))}
             >
-              ⊞ {jump.label(ply)}
+              ⊞ {ply == null ? "position" : jump.label(ply)}
             </button>
           </p>
         );

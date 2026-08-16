@@ -146,19 +146,34 @@ table.games tbody tr { cursor: pointer; }
 
 /* ---- review layout ---- */
 /* The review fills the viewport rather than being sized by a magic offset: .app
-   is a full-height column, the page and grid grow into what's left, and the chat
-   takes its height from the grid cell. Padding is inside that budget (border-box
-   + min-height), so nothing has to be subtracted by hand — the old
-   `calc(100vh - 190px)` under-counted the chrome and pushed the composer just
-   below the fold. */
-.review-page { flex: 1; display: flex; flex-direction: column; }
+   is pinned to the viewport while a review is on screen, the page and grid
+   divide that height, and the transcript is the only thing that scrolls.
+   Padding is inside that budget (border-box), so nothing has to be subtracted by
+   hand — the old `calc(100vh - 190px)` under-counted the chrome and pushed the
+   composer just below the fold.
+
+   Every link in the chain needs min-height:0. A flex or grid item's automatic
+   minimum size is its content, so without it the log refuses to shrink and each
+   new message grows the chat, the grid, and the page instead of scrolling —
+   `overflow-y: auto` on .chat-log alone never fires. */
+.app:has(.review-page) { height: 100dvh; }
+.review-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .review {
   display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 28px;
-  align-items: stretch; flex: 1;
+  align-items: stretch; flex: 1; min-height: 0;
 }
 .review > .board-col { align-self: start; }
-.review > .chat-col { display: flex; flex-direction: column; }
-@media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+.review > .chat-col { display: flex; flex-direction: column; min-height: 0; }
+
+/* Stacked, the board and the chat are two content-sized rows, so pinning .app to
+   the viewport would only make them spill out of it. The page scrolls again
+   instead — and the transcript gets its own explicit height, since a
+   content-sized row is exactly where it would resume growing the page. */
+@media (max-width: 900px) {
+  .review { grid-template-columns: 1fr; }
+  .app:has(.review-page) { height: auto; }
+  .review > .chat-col { height: 70dvh; }
+}
 
 /* Ply nav: the arrows hold station. The move readout is the only variable-width
    thing here ("start" vs "13... Ngxf3+"), so it gets a fixed box — left to size
@@ -209,6 +224,15 @@ table.games tbody tr { cursor: pointer; }
 .sq.l .co { color: var(--sq-d); }
 .sq.d .co { color: var(--sq-l); }
 
+/* A position the coach quoted that the game never reached. The accent frame is
+   the whole marker: the board is the one place a what-if can be mistaken for
+   something that happened, and saying so there costs no layout. Not --warn —
+   these are usually the move that *should* have been played, not a mistake. */
+.board-col.off-game .board {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* ---- eval trace (classes emitted by eval_trace.py) ---- */
 /* The trace is drawn with preserveAspectRatio="none" precisely so it can be
    poured into whatever box it is given. Sizing it to the column rather than to a
@@ -233,6 +257,18 @@ svg.trace { display: block; width: 100%; height: 124px; min-width: 0; }
   border-left: 3px solid transparent; border-right: 3px solid transparent;
   border-top: 4px solid var(--accent);
 }
+/* The number behind the curve. Neutral ink, never --good/--bad: those are
+   reserved for move severity, and a green "+1.25" would read as a good *move*
+   rather than a position White is better in. The surface tint is what keeps it
+   legible where the fill runs under it. */
+.eval-readout {
+  position: absolute; right: 6px; bottom: 5px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  color: var(--ink); background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--rule); border-radius: 2px; padding: 1px 6px;
+}
+
 .area-w { fill: var(--fill-w); }
 .area-b { fill: var(--fill-b); opacity: .9; }
 .mid { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
@@ -254,8 +290,10 @@ svg.trace { display: block; width: 100%; height: 124px; min-width: 0; }
 #cross, #dot { opacity: 0; }
 
 /* ---- chat ---- */
-.chat { display: flex; flex-direction: column; flex: 1; min-height: 420px; }
-.chat-log { flex: 1; overflow-y: auto; padding-right: 8px; }
+/* The 420px floor keeps the chat usable next to a short board column; min() so
+   it can't become a floor taller than the space there is on a short viewport. */
+.chat { display: flex; flex-direction: column; flex: 1; min-height: min(420px, 100%); }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; padding-right: 8px; }
 .msg { margin: 0 0 22px; }
 .msg .who {
   font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: .14em;

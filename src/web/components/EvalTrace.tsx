@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { describeEval, formatEval } from "../evalscore.ts";
 
 /**
  * The evaluation trace is produced by the game-review skill's eval_trace.py.
@@ -19,6 +20,7 @@ export function EvalTrace({
   marks = [],
   ply,
   plyCount,
+  wcp,
 }: {
   gameId: string;
   marks?: string[];
@@ -26,6 +28,8 @@ export function EvalTrace({
   ply?: number;
   /** Number of scanned plies — the trace's last x. */
   plyCount?: number;
+  /** Centipawns at `ply`, White's point of view, for the corner readout. */
+  wcp?: number | null;
 }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +77,20 @@ export function EvalTrace({
       ? Math.min(100, Math.max(0, ((Math.max(1, ply) - 1) / (plyCount - 1)) * 100))
       : null;
 
+  // The chart says which way the game is going; the number says by how much.
+  // Reading a magnitude off a clamped ±6.00 curve is guesswork, and it is the
+  // figure the coach quotes in the chat — so it belongs on screen, not inferred.
+  const score = formatEval(wcp);
+
   return (
     <div className="chart-box">
       <div dangerouslySetInnerHTML={{ __html: svg }} />
       {head != null && <span className="playhead" style={{ left: `${head}%` }} aria-hidden="true" />}
+      {score !== null && (
+        <output className="eval-readout" title={describeEval(wcp)}>
+          {score}
+        </output>
+      )}
     </div>
   );
 }
