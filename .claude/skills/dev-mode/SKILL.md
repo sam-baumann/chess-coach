@@ -35,14 +35,18 @@ pnpm test        # node:test — game-log parser + recurrence rule
 - `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, replaying a line into positions, and a both-themes preview/audit.
 - `dev-mode` (this skill) — switches Claude out of the chess-coach persona for codebase work.
 
-**Coaching state (outside `.claude/`):**
+**Coaching state (outside `.claude/`) — all of it gitignored, none of it repo content:**
 - `notes/game-log.md` — six-line note per analysed game (themes, what was struggled with,
   what to work on), newest first. The coach reads it before a review and adds an entry at
-  the top after one,
-  so recurring habits surface across sessions. The file's own header is the spec: entry
-  format, tag vocabulary, and the recurrence threshold for raising a theme. Keep that header
-  and the **Keeping the game log** section of `CLAUDE.md` in agreement.
-- `reviews/` — published `game-review` pages.
+  the top after one, so recurring habits surface across sessions. **Gitignored**: the
+  entries are the user's game history, and a public clone must not carry them.
+- `notes/game-log.template.md` — tracked, and the spec: entry format, tag vocabulary, and
+  the recurrence threshold for raising a theme. `ensureGameLog()` copies it to the log on
+  first boot, and `gamelog.test.ts` asserts the format against it. Edit the format here —
+  a change made only in a local log reaches nobody. Keep it and the **Keeping the game
+  log** section of `CLAUDE.md` in agreement.
+- `reviews/` — published `game-review` pages, also gitignored for the same reason (they
+  carry the user's username, their opponents', and game URLs).
 
 **Pattern:** each skill's `SKILL.md` is self-contained instructions for Claude to follow directly — nothing to register, and no build step. Adding a capability means writing a new `.claude/skills/<name>/SKILL.md` with a trigger-worthy `description` in the frontmatter.
 

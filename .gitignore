@@ -8,3 +8,9 @@ __pycache__/
 .claude/worktrees/
 data/
 dist/
+
+# Your own chess data, never repo content — a clone should arrive empty of it.
+# The log's format, tag vocabulary and recurrence rule live in the tracked
+# notes/game-log.template.md, which the server copies into place on first boot.
+notes/game-log.md
+reviews/

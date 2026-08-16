@@ -42,6 +42,13 @@ reads and writes to — newest entry first — and the hub derives a read-only i
 rebuilt whenever the file changes. That index is the only part of `data/` that is
 disposable.
 
+**Your chess data is yours, and this repo doesn't carry it.** `notes/game-log.md` and
+`reviews/` are gitignored: the log is your game history and the review pages name you and
+your opponents, so a clone arrives with neither. What *is* tracked is
+`notes/game-log.template.md` — the log's header, holding the entry format, the tag
+vocabulary and the recurrence rule. The server copies it to `notes/game-log.md` on first
+boot. Change the format there, not only in your local log.
+
 `data/` is untracked but **not** disposable as a whole. Alongside the index it holds your
 fetched games, every review transcript, and the completed engine sweeps in
 `data/sweeps/` — each of which cost minutes of engine time and none of which can be

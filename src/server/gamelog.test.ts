@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { countThemes, parseGameLog, parseVocab, pickRecurring } from "./gamelog.ts";
-import { GAME_LOG_PATH } from "./config.ts";
+import { GAME_LOG_TEMPLATE_PATH } from "./config.ts";
 
-const realLog = readFileSync(GAME_LOG_PATH, "utf8");
+const realLog = readFileSync(GAME_LOG_TEMPLATE_PATH, "utf8");
 
 /**
  * The real header, up to and including the entries marker, with whatever entries
@@ -12,9 +12,10 @@ const realLog = readFileSync(GAME_LOG_PATH, "utf8");
  *
  * These tests are about the *format*, so they must keep exercising the real
  * header — it is the spec, and a drift there is exactly what would break the
- * parser. But they cannot depend on the log's contents: the coach appends an
- * entry after every review, so asserting against the live file would fail the
- * first time the app is used for its purpose.
+ * parser. They read it from the template rather than from `notes/game-log.md`:
+ * the log is gitignored (its entries are the user's game history), so on a fresh
+ * clone or in CI it holds nothing, or isn't there at all. The template is the
+ * copy every log starts as, which makes it the thing worth asserting against.
  */
 const MARKER_LINE = realLog.split("\n").find((l) => l.trimStart().startsWith("<!-- Entries below"));
 const realHeader = MARKER_LINE
@@ -24,7 +25,7 @@ const realHeader = MARKER_LINE
 test("the log still carries its entries marker", () => {
   // Everything below depends on this cut existing; without it the parser would
   // treat the header's example entry as a real game.
-  assert.ok(MARKER_LINE, "notes/game-log.md must keep its '<!-- Entries below' marker");
+  assert.ok(MARKER_LINE, "notes/game-log.template.md must keep its '<!-- Entries below' marker");
 });
 
 test("the header contributes no entries", () => {

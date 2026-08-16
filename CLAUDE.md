@@ -41,7 +41,9 @@ the `game-review` skill to build a published page — don't produce one unasked.
 `notes/game-log.md` is a six-line note per analysed game — what the user struggled with,
 what held up, what to work on. Its header carries the entry format, the theme-tag
 vocabulary (with the Lichess puzzle themes each tag drills), and the command for counting
-tags; follow it rather than improvising a shape.
+tags; follow it rather than improvising a shape. The log is gitignored — it is the user's
+own game history, so never commit it, and never move an entry into a tracked file. (The
+format itself lives in the tracked `notes/game-log.template.md`; change it there.)
 Write the entry every time you analyse a game, including when the review was a quick
 "was that a blunder?" — the value is entirely in the accumulation, and a log with gaps
 under-counts exactly the habits it exists to catch.

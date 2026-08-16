@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -11,6 +11,12 @@ export const DATA_DIR = join(REPO_ROOT, "data");
 export const SWEEP_DIR = join(DATA_DIR, "sweeps");
 export const DB_PATH = join(DATA_DIR, "hub.db");
 export const GAME_LOG_PATH = join(REPO_ROOT, "notes", "game-log.md");
+/**
+ * The log's header — entry format, tag vocabulary, recurrence rule — kept as a
+ * tracked seed because the log itself is not. Entries are the user's own game
+ * history, so `notes/game-log.md` is gitignored and a fresh clone has only this.
+ */
+export const GAME_LOG_TEMPLATE_PATH = join(REPO_ROOT, "notes", "game-log.template.md");
 export const REVIEWS_DIR = join(REPO_ROOT, "reviews");
 export const SKILLS_DIR = join(REPO_ROOT, ".claude", "skills");
 
@@ -21,6 +27,27 @@ export function ensureDirs(): void {
   // Git doesn't track empty directories, so this may be absent on a fresh clone.
   // Creating it lets the /reviews/ static route register unconditionally at boot.
   mkdirSync(REVIEWS_DIR, { recursive: true });
+  ensureGameLog();
+}
+
+/**
+ * Seed the game log from its template when it is absent — the state of every
+ * fresh clone, since the log is gitignored. Without this the parser and the
+ * watcher would both be pointing at a file that never exists until the coach
+ * writes its first entry, and the trends view would open on an error rather
+ * than on an empty log.
+ *
+ * Never overwrites: an existing log holds the user's entries.
+ */
+export function ensureGameLog(): void {
+  if (existsSync(GAME_LOG_PATH)) return;
+  try {
+    copyFileSync(GAME_LOG_TEMPLATE_PATH, GAME_LOG_PATH);
+  } catch (err) {
+    // A missing template is a broken checkout, not a reason to refuse to boot;
+    // the log reader already treats an unreadable file as an empty one.
+    console.error("[config] could not seed", GAME_LOG_PATH, err);
+  }
 }
 
 /**
