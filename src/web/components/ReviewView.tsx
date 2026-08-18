@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Game, ReviewSession } from "@shared/events.ts";
 import { api, streamSweeps } from "../api.ts";
 import { plyLabel } from "../ply.ts";
@@ -18,8 +18,12 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const [session, setSession] = useState<ReviewSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sweepProgress, setSweepProgress] = useState<number | null>(null);
-  /** A position from the chat that the game never reached, or null for the game. */
-  const [offGameFen, setOffGameFen] = useState<string | null>(null);
+  /**
+   * A position from the chat that the game never reached, or null for the game.
+   * `line` is the notation it came from when the coach wrote one, which is what
+   * the board is captioned with — "10.a3" says more than "a position".
+   */
+  const [offGame, setOffGame] = useState<{ fen: string; line: string | null } | null>(null);
 
   const load = useMemo(
     () => async () => {
@@ -43,11 +47,40 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
    * otherwise the way out would be a control the user has to notice first.
    */
   const toPly = useCallback((next: number) => {
-    setOffGameFen(null);
+    setOffGame(null);
     setPly(next);
   }, []);
 
-  const showFen = useCallback((fen: string) => setOffGameFen(fen), []);
+  const showFen = useCallback((fen: string) => setOffGame({ fen, line: null }), []);
+
+  /**
+   * The same, for a what-if the coach wrote as notation rather than as a FEN.
+   * Only the server can turn "10.a3" into a position — it replays the move
+   * against the real game — so unlike showFen this one is a round trip, and the
+   * answers are cached: the coach names the same alternative several times in a
+   * review, and each fetch spawns a Python process.
+   */
+  const lineCache = useRef(new Map<string, string>());
+  const showLine = useCallback(
+    (line: string) => {
+      const cached = lineCache.current.get(line);
+      if (cached) {
+        setOffGame({ fen: cached, line });
+        return;
+      }
+      void api
+        .variation(gameId, line)
+        .then((r) => {
+          lineCache.current.set(line, r.fen);
+          setOffGame({ fen: r.fen, line });
+        })
+        // Surfaced rather than swallowed: the usual cause is notation that isn't
+        // legal in the position it names, and a click that does nothing is the
+        // bug this feature exists to fix.
+        .catch((e: Error) => setError(`Couldn't show ${line}: ${e.message}`));
+    },
+    [gameId],
+  );
 
   useEffect(() => {
     void load().catch((e: Error) => setError(e.message));
@@ -105,7 +138,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const moves = game.moves.split(" ").filter(Boolean);
   const currentFen = fens[ply] ?? START_FEN;
 
-  const boardFen = offGameFen ?? currentFen;
+  const boardFen = offGame?.fen ?? currentFen;
 
   // Ply 0 is the starting position, which has no row of its own; row 1's
   // eval_before is that position, and it is already White's point of view
@@ -141,10 +174,16 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
       <div className="review">
         {/* The frame is the only marker that the board has left the game — no
             panel, no strip. An arrow brings it back. */}
-        <div className={`board-col${offGameFen ? " off-game" : ""}`}>
+        <div className={`board-col${offGame ? " off-game" : ""}`}>
           <Board
             fen={boardFen}
-            caption={offGameFen ? "A position from the chat, not played in the game" : `Position after ${ply} plies`}
+            caption={
+              offGame
+                ? offGame.line
+                  ? `${offGame.line} — not played in the game`
+                  : "A position from the chat, not played in the game"
+                : `Position after ${ply} plies`
+            }
             flip={game.userColor === "black"}
           />
 
@@ -194,14 +233,14 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
                 <span
                   className="num"
                   title={
-                    offGameFen
+                    offGame
                       ? "The board is showing a position from the chat — an arrow returns to the game"
                       : plyLabel(ply, moves)
                   }
                 >
                   {/* Eleven characters, because the box is sized for "13... Ngxf3+"
                       and anything longer ellipsises to "not in the ga…". */}
-                  {offGameFen ? "not in game" : plyLabel(ply, moves)}
+                  {offGame ? "not in game" : plyLabel(ply, moves)}
                 </span>
               </div>
 
@@ -260,6 +299,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
               userColor={game.userColor}
               onJump={toPly}
               onFen={showFen}
+              onVariation={showLine}
             />
           ) : (
             <div className="card">

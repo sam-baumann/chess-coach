@@ -59,6 +59,12 @@ export const api = {
       }>,
     ),
 
+  /** The position after a move the coach named that the game never played. */
+  variation: (id: string, line: string) =>
+    fetch(`/api/games/${id}/variation?line=${encodeURIComponent(line)}`).then(
+      json<{ fen: string; label: string; fromPly: number }>,
+    ),
+
   startSweep: (id: string, force = false) => post(`/api/games/${id}/sweep`, { force }).then(json<{ status: string }>),
 
   createReview: (gameId: string) => post("/api/reviews", { gameId }).then(json<{ session: ReviewSession }>),

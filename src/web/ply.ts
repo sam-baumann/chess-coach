@@ -18,3 +18,20 @@ export function plyLabel(ply: number, moves: string[]): string {
   const dots = ply % 2 ? "." : "...";
   return `${Math.ceil(ply / 2)}${dots}${san ? ` ${san}` : ""}`;
 }
+
+/**
+ * Whether two SANs name the same move — "13.Qb5+" against the scoresheet's
+ * "Qb5+".
+ *
+ * Lenient about the parts that are commentary rather than move: check and mate
+ * marks are dropped by some writers and added by others, and `!?` annotations
+ * are the coach's opinion. Everything that identifies the move — piece,
+ * disambiguation, capture, square, promotion — has to match exactly, because
+ * treating a near-miss as the played move is how a what-if ends up silently
+ * showing the position it is an alternative to.
+ */
+export function sameMove(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const bare = (san: string) => san.replace(/[!?]+$/, "").replace(/[+#]$/, "");
+  return bare(a) === bare(b);
+}

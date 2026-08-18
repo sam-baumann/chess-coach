@@ -24,7 +24,7 @@ pnpm dev         # hub: Fastify on :3001 + Vite on :5173
 pnpm build       # build the SPA into dist/web (then :3001 serves it too)
 pnpm typecheck   # both tsconfig projects
 pnpm lint        # eslint
-pnpm test        # node:test — game-log parser + recurrence rule
+pnpm test        # node:test — game-log parser, recurrence rule, chat position refs
 ```
 
 ## Architecture
@@ -89,13 +89,28 @@ own (three-plus games, or two of the last three) rather than "most common tag so
 
 **Board diagrams and the eval trace shell out to the `game-review` scripts** rather than being
 rebuilt in React — `render_board.py` and `eval_trace.py` already encode the solid-glyph,
-square-parity, and diverging-fill decisions. A FEN in the coach's reply is clickable whether or
-not the scan holds it: one in the scan moves the scrubber, one the game never reached goes on
-the board on its own (framed, ply readout saying so) until any game navigation takes it back.
-That is the whole variation feature — no replay endpoint, no strip; the agent gets the FENs
-itself from `game-review/scripts/replay_line.py`. `src/web/theme.css` lifts the palette from
+square-parity, and diverging-fill decisions. `src/web/theme.css` lifts the palette from
 `game-review/template.html` verbatim, all three blocks, so the app and the published pages
 match; dropping the un-stamped `prefers-color-scheme` block is the regression to watch for.
+
+**Position references in the chat are resolved by what they name, not by where they sit.**
+`src/web/jump.ts` is the whole rule and the only place it lives: a FEN the scan holds moves the
+scrubber, and anything the game never reached goes on the board on its own (framed, ply readout
+saying so) until any game navigation takes it back. Move notation is the case with a trap in it,
+because `10.Qb3` and `10.a3` are the same ply and opposite meanings — the played move scrubs,
+any other move is a *variation*, replayed one half-move by `/api/games/:id/variation` through
+`replay_line.py` and shown as a what-if. Matching on the number alone is the bug that was there
+first, and it is invisible: the board moves either way, just to the wrong position. The SAN
+comparison is deliberately lenient about `+`/`#`/`!?` and exact about everything else, and
+`jump.test.ts` pins both halves. The agent needs no FEN for a one-move alternative any more;
+it still quotes one (from `game-review/scripts/replay_line.py`) when the position worth seeing
+is several moves down a line.
+
+**The chat's markdown subset is a contract with the agent, not just a renderer limit.**
+`Markdown.tsx` renders headings, lists, quotes, rules, bold, italic, links and code — no
+tables. Rather than growing the renderer, `hubContext()` in `agent.ts` tells the coach not to
+write them; a table that reaches the browser arrives as raw pipes. Anything added to the
+renderer, or refused by it, belongs in that prompt section too.
 
 A skill may also carry **helper scripts** in its own `scripts/` directory, for work that is
 slow, fiddly, or easy to get subtly wrong when re-derived from prose each time (engine

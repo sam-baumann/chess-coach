@@ -23,6 +23,7 @@ const run = promisify(execFile);
 
 const BOARD_SCRIPT = ".claude/skills/game-review/scripts/render_board.py";
 const TRACE_SCRIPT = ".claude/skills/game-review/scripts/eval_trace.py";
+const REPLAY_SCRIPT = ".claude/skills/game-review/scripts/replay_line.py";
 
 export async function boardHtml(
   fen: string,
@@ -42,4 +43,34 @@ export async function traceSvg(gameId: string, marks: string[] = [], aria = ""):
   if (aria) args.push("--aria", aria);
   const { stdout } = await run("uv", ["run", "python", ...args], { cwd: REPO_ROOT, maxBuffer: 4 << 20 });
   return stdout;
+}
+
+/**
+ * The position after a move the game did not play — "10.a3" against the game
+ * that answered 10.Qb3.
+ *
+ * Same reason as the two above: replay_line.py already knows how to read a move
+ * number as a branch point, which square a bare SAN means in that position, and
+ * how to say *where* an illegal line broke. Re-deriving that in TypeScript would
+ * mean a second SAN parser, and the second one is the one that is wrong.
+ *
+ * One half-move is all a single notation reference can name, so the replay is
+ * capped there rather than following a whole line the coach didn't write.
+ */
+export async function variationFen(
+  moves: string,
+  line: string,
+): Promise<{ fen: string; label: string; fromPly: number }> {
+  const { stdout } = await run(
+    "uv",
+    ["run", "--with", "chess", "python", REPLAY_SCRIPT, "--moves", moves, "--line", line, "--max", "1"],
+    { cwd: REPO_ROOT, maxBuffer: 1 << 20 },
+  );
+  const payload = JSON.parse(stdout) as {
+    startPly: number;
+    steps: { san: string; label: string; fen: string }[];
+  };
+  const step = payload.steps[0];
+  if (!step) throw new Error(`no move to replay in "${line}"`);
+  return { fen: step.fen, label: step.label, fromPly: payload.startPly };
 }

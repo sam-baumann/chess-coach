@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
-import { findRefs, isBareFen } from "../refs.ts";
+import type { Jump } from "../jump.ts";
+import { findRefs, isBareFen, type Ref } from "../refs.ts";
 
 /**
  * A small markdown renderer for the coach's replies, plus the thing that makes
@@ -20,21 +21,6 @@ import { findRefs, isBareFen } from "../refs.ts";
  * inline code, bold, italic, links. Anything outside it falls through as text.
  */
 
-export type Jump = {
-  /** Board index for a FEN the sweep actually produced, or null if unknown. */
-  resolveFen: (fen: string) => number | null;
-  /** Board index for a numbered move reference, or null if out of range. */
-  resolveMove: (moveNumber: number, black: boolean | null) => number | null;
-  /** Scoresheet notation for a board index, used as the link's text. */
-  label: (ply: number) => string;
-  onJump: (ply: number) => void;
-  /**
-   * Put a position that isn't in the game on the board — the coach's "what if",
-   * quoted as a FEN. There is no ply for these, so they can't go through onJump.
-   */
-  onFen?: (fen: string) => void;
-};
-
 export function Markdown({ text, jump }: { text: string; jump?: Jump }) {
   return (
     <>
@@ -49,6 +35,64 @@ export function Markdown({ text, jump }: { text: string; jump?: Jump }) {
 // Position references
 // ---------------------------------------------------------------------------
 
+/** A reference the reader can click, resolved down to what the click does. */
+type Link = { text: string; title: string; offGame: boolean; run: () => void };
+
+/**
+ * What clicking a reference should do — or null for one that stays plain text.
+ *
+ * Unresolvable references are deliberately not links: a button that moves the
+ * board to the wrong position is worse than the notation the user already reads,
+ * and that is exactly the shape the bug took. `10.a3` matched by move number
+ * alone put the *played* 10.Qb3 on the board and called it a3.
+ */
+function resolve(ref: Ref, jump: Jump): Link | null {
+  if (ref.kind === "fen") {
+    const ply = jump.resolveFen(ref.raw);
+    // A FEN is unreadable, so the link shows the move it *is* — or just
+    // "position" for one the game never reached.
+    if (ply != null) {
+      return {
+        text: jump.label(ply),
+        title: `Show the board at ${jump.label(ply)}`,
+        offGame: false,
+        run: () => jump.onJump(ply),
+      };
+    }
+    // A FEN the scan doesn't hold is a position the game never reached — the
+    // engine's recommendation, or a what-if the coach is arguing from. It still
+    // goes on the board; it just has no ply to move the scrubber to.
+    if (!jump.onFen) return null;
+    return {
+      text: "position",
+      title: "Show this position on the board",
+      offGame: true,
+      run: () => jump.onFen?.(ref.raw),
+    };
+  }
+
+  const target = jump.resolveMove(ref.moveNumber, ref.black, ref.san);
+  if (!target) return null;
+
+  // Notation the user already typed or read stays verbatim either way; replacing
+  // it would make the coach look like it said something else.
+  if (target.kind === "game") {
+    return {
+      text: ref.raw,
+      title: `Show the board at ${jump.label(target.ply)}`,
+      offGame: false,
+      run: () => jump.onJump(target.ply),
+    };
+  }
+  if (!jump.onVariation) return null;
+  return {
+    text: ref.raw,
+    title: "Show this position on the board — the game didn't play it",
+    offGame: true,
+    run: () => jump.onVariation?.(target.line),
+  };
+}
+
 /** Split a text run into plain strings and resolved position links. */
 function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNode[] {
   if (!jump) return [text];
@@ -57,32 +101,19 @@ function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNo
   let last = 0;
 
   for (const ref of findRefs(text)) {
-    const ply =
-      ref.kind === "fen" ? jump.resolveFen(ref.raw) : jump.resolveMove(ref.moveNumber, ref.black);
-
-    // A FEN the scan doesn't hold is a position the game never reached — the
-    // engine's recommendation, or a what-if the coach is arguing from. It still
-    // goes on the board; it just has no ply to move the scrubber to.
-    const offGame = ply == null && ref.kind === "fen" && jump.onFen;
-
-    // Anything else unresolvable stays plain text: a link that jumps the board
-    // to the wrong position is worse than the notation the user already reads.
-    if (ply == null && !offGame) continue;
+    const link = resolve(ref, jump);
+    if (!link) continue;
 
     if (ref.start > last) out.push(text.slice(last, ref.start));
     out.push(
       <button
         key={`${keyBase}:${ref.start}`}
         type="button"
-        className="ply-link"
-        title={ply == null ? "Show this position on the board" : `Show the board at ${jump.label(ply)}`}
-        onClick={() => (ply == null ? jump.onFen?.(ref.raw) : jump.onJump(ply))}
+        className={link.offGame ? "ply-link off-game" : "ply-link"}
+        title={link.title}
+        onClick={link.run}
       >
-        {/* A FEN is unreadable, so show the move it *is* — or just "position"
-            when it isn't a move in this game. Notation the user already typed or
-            read stays verbatim; replacing it would make the coach look like it
-            said something else. */}
-        {ref.kind !== "fen" ? ref.raw : ply == null ? "position" : jump.label(ply)}
+        {link.text}
       </button>,
     );
     last = ref.end;
@@ -193,18 +224,20 @@ function renderBlock(b: Block, jump: Jump | undefined): ReactNode {
       // render it as the position it denotes, not as a wall of slashes. That
       // holds whether or not the position is one the game reached.
       const only = b.content.trim();
-      const bare = jump && isBareFen(only);
-      const ply = bare ? jump.resolveFen(only) : null;
-      if (bare && (ply != null || jump.onFen)) {
+      const link =
+        jump && isBareFen(only)
+          ? resolve({ kind: "fen", start: 0, end: only.length, raw: only }, jump)
+          : null;
+      if (link) {
         return (
           <p className="fen-line">
             <button
               type="button"
-              className="ply-link block"
-              title={ply == null ? "Show this position on the board" : `Show the board at ${jump.label(ply)}`}
-              onClick={() => (ply == null ? jump.onFen?.(only) : jump.onJump(ply))}
+              className={link.offGame ? "ply-link block off-game" : "ply-link block"}
+              title={link.title}
+              onClick={link.run}
             >
-              ⊞ {ply == null ? "position" : jump.label(ply)}
+              ⊞ {link.text}
             </button>
           </p>
         );

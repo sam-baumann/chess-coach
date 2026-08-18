@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Game, ReviewEvent, ReviewSession } from "@shared/events.ts";
 import { api, streamReview } from "../api.ts";
-import { plyLabel, plyOf } from "../ply.ts";
-import { Markdown, type Jump } from "./Markdown.tsx";
+import { buildJump } from "../jump.ts";
+import { Markdown } from "./Markdown.tsx";
 
 type Item =
   | { kind: "message"; id: string; role: "user" | "assistant"; text: string }
@@ -21,6 +21,7 @@ export function ChatPane({
   userColor,
   onJump,
   onFen,
+  onVariation,
 }: {
   session: ReviewSession;
   moves: string[];
@@ -29,6 +30,8 @@ export function ChatPane({
   onJump: (ply: number) => void;
   /** Show a position the coach quoted that the game never reached. */
   onFen: (fen: string) => void;
+  /** Show the position after a move the coach named but the game never played. */
+  onVariation: (line: string) => void;
 }) {
   const [items, setItems] = useState<Item[]>(() =>
     session.messages.map((m) => ({
@@ -45,34 +48,11 @@ export function ChatPane({
   const logRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
-  /**
-   * Position references in the coach's replies become board jumps. Without the
-   * sweep there are no scanned positions to jump to, so move references resolve
-   * to null and stay plain text rather than becoming buttons that do nothing —
-   * but a quoted FEN still opens on the board, since showing one needs no scan.
-   */
-  const jump = useMemo<Jump>(() => {
-    const swept = fens.length > 1;
-
-    // Keyed on the first four FEN fields: the half-move and full-move counters
-    // differ between what the agent quotes and what the scan stored often
-    // enough to matter, and they don't identify the position anyway.
-    const key = (fen: string) => fen.trim().split(/\s+/).slice(0, 4).join(" ");
-    const byFen = new Map(fens.map((f, i) => [key(f), i]));
-
-    return {
-      resolveFen: (fen) => (swept ? byFen.get(key(fen)) ?? null : null),
-      resolveMove: (moveNumber, black) => {
-        // A bare "move 13" doesn't say which side; the coach is nearly always
-        // talking about the user's own move, so that is the reading taken.
-        const ply = plyOf(moveNumber, black ?? userColor === "black");
-        return swept && ply > 0 && ply < fens.length ? ply : null;
-      },
-      label: (ply) => plyLabel(ply, moves),
-      onJump,
-      onFen,
-    };
-  }, [fens, moves, userColor, onJump, onFen]);
+  /** Position references in the coach's replies become board moves — see buildJump. */
+  const jump = useMemo(
+    () => buildJump({ fens, moves, userColor, onJump, onFen, onVariation }),
+    [fens, moves, userColor, onJump, onFen, onVariation],
+  );
 
   useEffect(() => {
     const stop = streamReview(
