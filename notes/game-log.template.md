@@ -1,3 +1,12 @@
+<!--
+  Seed for notes/game-log.md, which is gitignored: the entries are the user's own
+  game history, not repo content. The server copies this file into place on first
+  boot if the log is missing (ensureGameLog in src/server/config.ts).
+
+  This header is the spec — the parser, the tag vocabulary and the tests all read
+  it from here. Edit the format here, never only in a local log.
+-->
+
 # Game log
 
 One entry per analysed game, **newest first**. The point of this file is recurrence: a

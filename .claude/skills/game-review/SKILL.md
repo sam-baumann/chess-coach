@@ -49,6 +49,21 @@ and a move where two natural-looking options differ by one square is the most in
 Diagrams come from `scripts/render_board.py` (importable as `board_html(fen, highlight, flip)`).
 Highlight the squares the point turns on — the hanging pawn, the file, the escape square.
 
+To diagram a move that *wasn't* played — the engine's recommendation, the line the moment turns
+on — get its positions from `scripts/replay_line.py`, which replays notation against the real
+game rather than making you assemble FENs by hand:
+
+```bash
+uv run --with chess python .claude/skills/game-review/scripts/replay_line.py \
+    --moves "<the game's SAN moves>" --line "13... Rd8 14.Qxd8 Rxd8"
+```
+
+The move number on the first move is what places the line in the game. Each step comes back with
+its FEN and UCI, so the diagram and its highlighted squares both fall out of the same call.
+(Importable as `replay_line(game_moves, line)`.) It earns its keep in the hub too: a FEN quoted
+in a review chat is clickable, so this is how a "what should have happened" position gets onto
+the board there.
+
 **4. Verify in both themes before publishing.**
 
 ```bash
@@ -60,6 +75,10 @@ fix before publishing. Then **actually look at the PNGs**; the audit checks colo
 
 **5. Publish** with the `Artifact` tool. Write the file under `reviews/`, use a chess favicon,
 and keep the same file path when updating so the URL is stable.
+
+Running inside the improvement hub, there is no `Artifact` tool — the Agent SDK doesn't provide
+one. Write the file to `reviews/<name>.html` and stop there; the hub serves that directory at
+`/reviews/<name>.html`. Everything above this step is unchanged.
 
 ## What makes these pages work
 
