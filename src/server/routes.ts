@@ -12,7 +12,7 @@ import {
 } from "./agent.ts";
 import { computeTrends, listEntries, rebuildIndex, skippedHeadings, themeVocab } from "./gamelog.ts";
 import { LichessError, fetchGames, getGame, listGames, upsertGames } from "./lichess.ts";
-import { boardHtml, traceSvg, variationFen } from "./render.ts";
+import { boardHtml, replayLine, traceSvg } from "./render.ts";
 import { openSse } from "./sse.ts";
 import { checkStockfish, readScan, startSweep, stockfishMissingHelp, sweepBus } from "./sweep.ts";
 
@@ -207,8 +207,10 @@ export function registerRoutes(app: FastifyInstance): void {
   );
 
   /**
-   * The position after a move the coach named but the game never played, so a
-   * "9.Bg5!" in the chat can go on the board like a quoted FEN does.
+   * The positions a line the coach wrote names but the game never played, so a
+   * "9.Bg5!" in the chat can go on the board like a quoted FEN does — and so can
+   * any half-move of a line the coach declared, which is why every step comes
+   * back rather than only the last.
    *
    * A GET with the line in the query string because it is a pure function of the
    * game and the notation — the same click twice is the same position, and the
@@ -221,12 +223,12 @@ export function registerRoutes(app: FastifyInstance): void {
       if (!game) return reply.code(404).send({ error: "Unknown game" });
       const line = req.query.line?.trim();
       if (!line) return reply.code(400).send({ error: "line is required" });
-      // Every call spawns an interpreter, so the input is bounded before it can:
-      // a single move reference is a dozen characters, and nothing legitimate
-      // reaching here is long.
-      if (line.length > 120) return reply.code(400).send({ error: "line is too long" });
+      // Every call spawns an interpreter, so the input is bounded before it can.
+      // A declared line is capped at MAX_STEPS half-moves in the browser, which
+      // is comfortably inside this; a single move reference is a dozen characters.
+      if (line.length > 300) return reply.code(400).send({ error: "line is too long" });
       try {
-        return await variationFen(game.moves, line);
+        return await replayLine(game.moves, line);
       } catch (err) {
         // replay_line.py exits with its own message on stderr — "Bg5 is not legal
         // in the position the line starts from" is worth showing; the `uv run`

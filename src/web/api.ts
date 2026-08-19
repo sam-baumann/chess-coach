@@ -59,10 +59,18 @@ export const api = {
       }>,
     ),
 
-  /** The position after a move the coach named that the game never played. */
+  /**
+   * Every position a line the coach wrote passes through — all of them, not just
+   * the last, since a reference into a declared line can name any step of it.
+   */
   variation: (id: string, line: string) =>
     fetch(`/api/games/${id}/variation?line=${encodeURIComponent(line)}`).then(
-      json<{ fen: string; label: string; fromPly: number }>,
+      json<{
+        startPly: number;
+        startFen: string;
+        steps: { san: string; label: string; fen: string }[];
+        truncated: boolean;
+      }>,
     ),
 
   startSweep: (id: string, force = false) => post(`/api/games/${id}/sweep`, { force }).then(json<{ status: string }>),

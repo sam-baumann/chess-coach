@@ -8,6 +8,17 @@ import { EvalTrace } from "./EvalTrace.tsx";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+/**
+ * What the board says while it is off the game. A step part-way down a line has
+ * to name both — the move on the board and the line it only exists inside — or
+ * the caption claims a position the notation alone cannot produce.
+ */
+function captionFor(off: { line: string | null; move: string | null }): string {
+  if (!off.line) return "A position from the chat, not played in the game";
+  if (off.move && off.move !== off.line) return `${off.move} in ${off.line} — not played in the game`;
+  return `${off.line} — not played in the game`;
+}
+
 /** The scan rows the review reads — a subset of what scan_game.py writes. */
 type Row = { ply: number; fen_after: string; wcp_after: number; eval_before: number };
 
@@ -21,9 +32,15 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   /**
    * A position from the chat that the game never reached, or null for the game.
    * `line` is the notation it came from when the coach wrote one, which is what
-   * the board is captioned with — "10.a3" says more than "a position".
+   * the board is captioned with — "10.a3" says more than "a position". `move`
+   * names the half-move of that line actually on the board, which is only the
+   * whole line when the line is one move long.
    */
-  const [offGame, setOffGame] = useState<{ fen: string; line: string | null } | null>(null);
+  const [offGame, setOffGame] = useState<{
+    fen: string;
+    line: string | null;
+    move: string | null;
+  } | null>(null);
 
   const load = useMemo(
     () => async () => {
@@ -51,28 +68,41 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
     setPly(next);
   }, []);
 
-  const showFen = useCallback((fen: string) => setOffGame({ fen, line: null }), []);
+  const showFen = useCallback((fen: string) => setOffGame({ fen, line: null, move: null }), []);
 
   /**
    * The same, for a what-if the coach wrote as notation rather than as a FEN.
-   * Only the server can turn "10.a3" into a position — it replays the move
+   * Only the server can turn "10.a3" into a position — it replays the moves
    * against the real game — so unlike showFen this one is a round trip, and the
-   * answers are cached: the coach names the same alternative several times in a
-   * review, and each fetch spawns a Python process.
+   * answers are cached by line: the coach names the same alternative several
+   * times in a review, every step of a declared line is the same replay, and
+   * each fetch spawns a Python process.
    */
-  const lineCache = useRef(new Map<string, string>());
+  const lineCache = useRef(new Map<string, { label: string; fen: string }[]>());
   const showLine = useCallback(
-    (line: string) => {
+    (line: string, step: number) => {
+      const show = (steps: { label: string; fen: string }[]) => {
+        const at = steps[step];
+        // A line whose steps ran out is the coach declaring more half-moves than
+        // replay_line.py keeps; say so rather than showing a neighbouring
+        // position as if it were the one named.
+        if (!at) {
+          setError(`Couldn't show move ${step + 1} of ${line}: the line replays ${steps.length} move(s).`);
+          return;
+        }
+        setOffGame({ fen: at.fen, line, move: at.label });
+      };
+
       const cached = lineCache.current.get(line);
       if (cached) {
-        setOffGame({ fen: cached, line });
+        show(cached);
         return;
       }
       void api
         .variation(gameId, line)
         .then((r) => {
-          lineCache.current.set(line, r.fen);
-          setOffGame({ fen: r.fen, line });
+          lineCache.current.set(line, r.steps);
+          show(r.steps);
         })
         // Surfaced rather than swallowed: the usual cause is notation that isn't
         // legal in the position it names, and a click that does nothing is the
@@ -179,9 +209,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
             fen={boardFen}
             caption={
               offGame
-                ? offGame.line
-                  ? `${offGame.line} — not played in the game`
-                  : "A position from the chat, not played in the game"
+                ? captionFor(offGame)
                 : `Position after ${ply} plies`
             }
             flip={game.userColor === "black"}
@@ -296,7 +324,6 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
               session={session}
               moves={moves}
               fens={fens}
-              userColor={game.userColor}
               onJump={toPly}
               onFen={showFen}
               onVariation={showLine}

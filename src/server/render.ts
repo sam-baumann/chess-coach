@@ -45,32 +45,44 @@ export async function traceSvg(gameId: string, marks: string[] = [], aria = ""):
   return stdout;
 }
 
+/** One half-move of a replayed line, as replay_line.py emits it. */
+export interface LineStep {
+  san: string;
+  uci: string;
+  label: string;
+  fen: string;
+}
+
 /**
- * The position after a move the game did not play — "10.a3" against the game
- * that answered 10.Qb3.
+ * The positions a line names — "10.a3" against the game that answered 10.Qb3,
+ * or the whole of "14... d5 15.Nxd4 dxc4 16.bxc4" the coach declared.
  *
  * Same reason as the two above: replay_line.py already knows how to read a move
  * number as a branch point, which square a bare SAN means in that position, and
  * how to say *where* an illegal line broke. Re-deriving that in TypeScript would
  * mean a second SAN parser, and the second one is the one that is wrong.
  *
- * One half-move is all a single notation reference can name, so the replay is
- * capped there rather than following a whole line the coach didn't write.
+ * Every half-move comes back, not just the last: a reference into a declared
+ * line names a step part-way down it, and replaying the line once per click is
+ * cheaper than once per step.
  */
-export async function variationFen(
+export async function replayLine(
   moves: string,
   line: string,
-): Promise<{ fen: string; label: string; fromPly: number }> {
+  limit = 24,
+): Promise<{ startPly: number; startFen: string; steps: LineStep[]; truncated: boolean }> {
   const { stdout } = await run(
     "uv",
-    ["run", "--with", "chess", "python", REPLAY_SCRIPT, "--moves", moves, "--line", line, "--max", "1"],
+    ["run", "--with", "chess", "python", REPLAY_SCRIPT, "--moves", moves, "--line", line,
+     "--max", String(limit)],
     { cwd: REPO_ROOT, maxBuffer: 1 << 20 },
   );
   const payload = JSON.parse(stdout) as {
     startPly: number;
-    steps: { san: string; label: string; fen: string }[];
+    startFen: string;
+    steps: LineStep[];
+    truncated: boolean;
   };
-  const step = payload.steps[0];
-  if (!step) throw new Error(`no move to replay in "${line}"`);
-  return { fen: step.fen, label: step.label, fromPly: payload.startPly };
+  if (!payload.steps.length) throw new Error(`no move to replay in "${line}"`);
+  return payload;
 }

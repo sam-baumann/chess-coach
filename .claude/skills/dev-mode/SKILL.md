@@ -24,7 +24,7 @@ pnpm dev         # hub: Fastify on :3001 + Vite on :5173
 pnpm build       # build the SPA into dist/web (then :3001 serves it too)
 pnpm typecheck   # both tsconfig projects
 pnpm lint        # eslint
-pnpm test        # node:test — game-log parser, recurrence rule, chat position refs
+pnpm test        # node:test — game-log parser, recurrence rule, chat position refs and lines
 ```
 
 ## Architecture
@@ -93,24 +93,47 @@ square-parity, and diverging-fill decisions. `src/web/theme.css` lifts the palet
 `game-review/template.html` verbatim, all three blocks, so the app and the published pages
 match; dropping the un-stamped `prefers-color-scheme` block is the regression to watch for.
 
-**Position references in the chat are resolved by what they name, not by where they sit.**
-`src/web/jump.ts` is the whole rule and the only place it lives: a FEN the scan holds moves the
-scrubber, and anything the game never reached goes on the board on its own (framed, ply readout
-saying so) until any game navigation takes it back. Move notation is the case with a trap in it,
-because `10.Qb3` and `10.a3` are the same ply and opposite meanings — the played move scrubs,
-any other move is a *variation*, replayed one half-move by `/api/games/:id/variation` through
-`replay_line.py` and shown as a what-if. Matching on the number alone is the bug that was there
-first, and it is invisible: the board moves either way, just to the wrong position. The SAN
-comparison is deliberately lenient about `+`/`#`/`!?` and exact about everything else, and
-`jump.test.ts` pins both halves. The agent needs no FEN for a one-move alternative any more;
-it still quotes one (from `game-review/scripts/replay_line.py`) when the position worth seeing
-is several moves down a line.
+**Position references in the chat are stated by the coach, never recognised in its prose.**
+A message can move the board two ways, and `src/web/jump.ts` is the whole rule: a FEN the scan
+holds moves the scrubber, and a *tagged move* — `[dxc4](A:14:..)`, meaning Black's 14th in the
+line declared as `A`, with `game` as the id for the move actually played — resolves to one
+half-move of one line. Anything the game never reached goes on the board on its own (framed,
+ply readout saying so) until any game navigation takes it back.
+
+Reading moves out of the prose was the older design and it is gone. It could not work: a regex
+had to demand a move number to tell `13.Bxc6+` from "the d5 pawn", so `dxc4` inside a line was
+unreachable, and a number alone could not tell the played move from the suggested one
+(`10.Qb3` vs `10.a3`) or place a move whose position only exists inside a variation. Every one
+of those failures was silent — the board moved either way, just to the wrong position. A tag
+states the line, the move number and the side, so none of them can be expressed any more, and
+`refs.ts` is left doing nothing but finding FENs.
+
+The one check kept is `agrees()`: the tag says *where* and the link text says *what*, so a
+disagreement drops the link and leaves the coach's text alone — a mistagged move costs a link
+rather than showing a position the sentence is not about. Text that isn't notation
+("the knight jump") makes no claim and passes.
+
+**A tag needs a line to point into, which the coach declares.** `src/web/lines.ts` parses a
+fenced ```` ```line id=A ```` block — notation only, never FENs, because replay_line.py stays
+the only SAN parser in the project — into `{ply, san}` steps, expanding any `from=A@Bxd4`
+continuation into one flat line. The moves are pasted from `probe_moments.py`, whose PV format
+(`14...d5 15.Nxd4 dxc4 16.bxc4`) is already exactly what the block wants, so a declared line is
+one the engine produced rather than one composed by hand. The reader never sees the block;
+`declare()` in `Markdown.tsx` reads a message's blocks in one pass, so where the block sits
+relative to the prose decides nothing. Half-streamed declarations render as nothing rather than
+as a warning — unfinished is not the same as wrong — and a finished one that will not parse
+says so, since its tags will silently stop resolving otherwise. `/api/games/:id/variation`
+replays a line through `replay_line.py` and returns *every* step, so one click per line is one
+replay, not one per move.
 
 **The chat's markdown subset is a contract with the agent, not just a renderer limit.**
 `Markdown.tsx` renders headings, lists, quotes, rules, bold, italic, links and code — no
 tables. Rather than growing the renderer, `hubContext()` in `agent.ts` tells the coach not to
-write them; a table that reaches the browser arrives as raw pipes. Anything added to the
-renderer, or refused by it, belongs in that prompt section too.
+write them; a table that reaches the browser arrives as raw pipes. Move tags and the
+```` ```line ```` block are the same contract read the other way: the renderer understands two
+things the agent has to be told to write, and a review whose links have quietly stopped
+appearing is a prompt regression, not a renderer one. Anything added to the renderer, or
+refused by it, belongs in that prompt section too.
 
 A skill may also carry **helper scripts** in its own `scripts/` directory, for work that is
 slow, fiddly, or easy to get subtly wrong when re-derived from prose each time (engine

@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import type { Jump } from "../jump.ts";
-import { findRefs, isBareFen, type Ref } from "../refs.ts";
+import { isLineBlock, parseDeclaration, parseTag, type DeclaredLine } from "../lines.ts";
+import { findRefs, isBareFen } from "../refs.ts";
 
 /**
  * A small markdown renderer for the coach's replies, plus the thing that makes
@@ -22,14 +23,41 @@ import { findRefs, isBareFen, type Ref } from "../refs.ts";
  */
 
 export function Markdown({ text, jump }: { text: string; jump?: Jump }) {
+  const { blocks, lines } = declare(parseBlocks(text));
+  const ctx = jump && { jump, lines };
   return (
     <>
-      {parseBlocks(text).map((b, i) => (
-        <Fragment key={i}>{renderBlock(b, jump)}</Fragment>
+      {blocks.map((b, i) => (
+        <Fragment key={i}>{renderBlock(b, ctx)}</Fragment>
       ))}
     </>
   );
 }
+
+/**
+ * Read the message's line declarations, and replace each block that held one.
+ *
+ * A whole-message pass rather than a running scope: a tag names its line by id,
+ * so where the block sits relative to the prose no longer decides anything, and
+ * a coach who writes the block after the paragraph that uses it is still
+ * understood. Only `from=` keeps an order, since a line can only continue one
+ * already declared.
+ */
+function declare(blocks: Block[]): { blocks: Block[]; lines: DeclaredLine[] } {
+  const lines: DeclaredLine[] = [];
+  const out = blocks.map((b): Block => {
+    if (b.kind !== "code" || !isLineBlock(b.info)) return b;
+    const line = parseDeclaration(b.info, b.content, lines);
+    if (line) lines.push(line);
+    // A declaration still being streamed is half a line and fails to parse; it
+    // is not wrong yet, so the warning waits for the closing fence.
+    return { kind: "declaration", broken: !line && b.closed, content: b.content };
+  });
+  return { blocks: out, lines };
+}
+
+/** What a message's links are resolved against: the board, and its own declared lines. */
+type Ctx = { jump: Jump; lines: DeclaredLine[] };
 
 // ---------------------------------------------------------------------------
 // Position references
@@ -39,83 +67,97 @@ export function Markdown({ text, jump }: { text: string; jump?: Jump }) {
 type Link = { text: string; title: string; offGame: boolean; run: () => void };
 
 /**
- * What clicking a reference should do — or null for one that stays plain text.
+ * What clicking a quoted FEN should do — or null for one that stays plain text.
  *
  * Unresolvable references are deliberately not links: a button that moves the
- * board to the wrong position is worse than the notation the user already reads,
- * and that is exactly the shape the bug took. `10.a3` matched by move number
- * alone put the *played* 10.Qb3 on the board and called it a3.
+ * board to the wrong position is worse than the notation the user already reads.
  */
-function resolve(ref: Ref, jump: Jump): Link | null {
-  if (ref.kind === "fen") {
-    const ply = jump.resolveFen(ref.raw);
-    // A FEN is unreadable, so the link shows the move it *is* — or just
-    // "position" for one the game never reached.
-    if (ply != null) {
-      return {
-        text: jump.label(ply),
-        title: `Show the board at ${jump.label(ply)}`,
-        offGame: false,
-        run: () => jump.onJump(ply),
-      };
-    }
-    // A FEN the scan doesn't hold is a position the game never reached — the
-    // engine's recommendation, or a what-if the coach is arguing from. It still
-    // goes on the board; it just has no ply to move the scrubber to.
-    if (!jump.onFen) return null;
+function resolveFen(raw: string, jump: Jump): Link | null {
+  const ply = jump.resolveFen(raw);
+  // A FEN is unreadable, so the link shows the move it *is* — or just "position"
+  // for one the game never reached.
+  if (ply != null) {
     return {
-      text: "position",
-      title: "Show this position on the board",
-      offGame: true,
-      run: () => jump.onFen?.(ref.raw),
-    };
-  }
-
-  const target = jump.resolveMove(ref.moveNumber, ref.black, ref.san);
-  if (!target) return null;
-
-  // Notation the user already typed or read stays verbatim either way; replacing
-  // it would make the coach look like it said something else.
-  if (target.kind === "game") {
-    return {
-      text: ref.raw,
-      title: `Show the board at ${jump.label(target.ply)}`,
+      text: jump.label(ply),
+      title: `Show the board at ${jump.label(ply)}`,
       offGame: false,
-      run: () => jump.onJump(target.ply),
+      run: () => jump.onJump(ply),
     };
   }
-  if (!jump.onVariation) return null;
+  // A FEN the scan doesn't hold is a position the game never reached — the
+  // engine's recommendation, or a what-if the coach is arguing from. It still
+  // goes on the board; it just has no ply to move the scrubber to.
+  if (!jump.onFen) return null;
   return {
-    text: ref.raw,
-    title: "Show this position on the board — the game didn't play it",
+    text: "position",
+    title: "Show this position on the board",
     offGame: true,
-    run: () => jump.onVariation?.(target.line),
+    run: () => jump.onFen?.(raw),
   };
 }
 
-/** Split a text run into plain strings and resolved position links. */
-function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNode[] {
-  if (!jump) return [text];
+/**
+ * The same for a tagged move — `[dxc4](A:14:..)`.
+ *
+ * The text is kept exactly as written: the coach chose how to say it, and a link
+ * that renamed the move would make the sentence read as something else.
+ */
+function resolveMove(href: string, text: string, ctx: Ctx): Link | null {
+  const tag = parseTag(href);
+  if (!tag) return null;
+  const target = ctx.jump.resolveTag(tag, text, ctx.lines);
+  if (!target) return null;
+
+  if (target.kind === "game") {
+    return {
+      text,
+      title: `Show the board at ${ctx.jump.label(target.ply)}`,
+      offGame: false,
+      run: () => ctx.jump.onJump(target.ply),
+    };
+  }
+  if (!ctx.jump.onVariation) return null;
+  return {
+    text,
+    title: `Show this position on the board — from ${target.line}, not played in the game`,
+    offGame: true,
+    run: () => ctx.jump.onVariation?.(target.line, target.step),
+  };
+}
+
+/** One resolved reference, as the button the reader clicks. */
+function linkButton(link: Link, key: string, extraClass = ""): ReactNode {
+  return (
+    <button
+      key={key}
+      type="button"
+      className={`ply-link${extraClass}${link.offGame ? " off-game" : ""}`}
+      title={link.title}
+      onClick={link.run}
+    >
+      {link.text}
+    </button>
+  );
+}
+
+/**
+ * Split a text run into plain strings and the FENs quoted in it.
+ *
+ * Only FENs: moves are tagged links, which the inline parser handles, so this no
+ * longer reads the prose for notation at all.
+ */
+function linkify(text: string, ctx: Ctx | undefined, keyBase: string): ReactNode[] {
+  if (!ctx) return [text];
 
   const out: ReactNode[] = [];
   let last = 0;
 
   for (const ref of findRefs(text)) {
-    const link = resolve(ref, jump);
+    const link = resolveFen(ref.raw, ctx.jump);
     if (!link) continue;
 
     if (ref.start > last) out.push(text.slice(last, ref.start));
-    out.push(
-      <button
-        key={`${keyBase}:${ref.start}`}
-        type="button"
-        className={link.offGame ? "ply-link off-game" : "ply-link"}
-        title={link.title}
-        onClick={link.run}
-      >
-        {link.text}
-      </button>,
-    );
+    out.push(linkButton(link, `${keyBase}:${ref.start}`));
     last = ref.end;
   }
 
@@ -128,7 +170,9 @@ function linkify(text: string, jump: Jump | undefined, keyBase: string): ReactNo
 // ---------------------------------------------------------------------------
 
 type Block =
-  | { kind: "code"; content: string }
+  | { kind: "code"; info: string; content: string; closed: boolean }
+  /** A ```line block, replaced by the scoping pass once it has been read. */
+  | { kind: "declaration"; broken: boolean; content: string }
   | { kind: "heading"; level: number; text: string }
   | { kind: "list"; ordered: boolean; items: string[] }
   | { kind: "quote"; text: string }
@@ -150,10 +194,15 @@ function parseBlocks(src: string): Block[] {
 
     if (/^\s*```/.test(line)) {
       flush();
+      // The info string is kept because one value of it is not decoration: a
+      // ```line block is the coach declaring a variation, and it is read, not
+      // rendered. An unterminated fence still becomes a block, which is what
+      // keeps a half-streamed declaration off the screen.
+      const info = line.replace(/^\s*```/, "").trim();
       const body: string[] = [];
       i++;
       while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
-      blocks.push({ kind: "code", content: body.join("\n") });
+      blocks.push({ kind: "code", info, content: body.join("\n"), closed: i < lines.length });
       continue;
     }
 
@@ -217,28 +266,29 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
-function renderBlock(b: Block, jump: Jump | undefined): ReactNode {
+function renderBlock(b: Block, ctx: Ctx | undefined): ReactNode {
   switch (b.kind) {
+    // A line declaration is metadata for the links, not something to read: it
+    // says which half-move sits at which ply so the references below it resolve,
+    // and the prose says the same thing in words. It shows only when it cannot
+    // be read — the links it should have made are missing either way, and
+    // dropping it silently would make that look like a renderer bug.
+    case "declaration":
+      return b.broken ? (
+        <p className="muted" style={{ fontSize: 12.5 }}>
+          ⚠ couldn&rsquo;t read a line the coach declared: {b.content.trim()}
+        </p>
+      ) : null;
     case "code": {
       // A fence holding nothing but a FEN is the case that started all this —
       // render it as the position it denotes, not as a wall of slashes. That
       // holds whether or not the position is one the game reached.
       const only = b.content.trim();
-      const link =
-        jump && isBareFen(only)
-          ? resolve({ kind: "fen", start: 0, end: only.length, raw: only }, jump)
-          : null;
+      const link = ctx && isBareFen(only) ? resolveFen(only, ctx.jump) : null;
       if (link) {
         return (
           <p className="fen-line">
-            <button
-              type="button"
-              className={link.offGame ? "ply-link block off-game" : "ply-link block"}
-              title={link.title}
-              onClick={link.run}
-            >
-              ⊞ {link.text}
-            </button>
+            {linkButton({ ...link, text: `⊞ ${link.text}` }, "fen", " block")}
           </p>
         );
       }
@@ -247,28 +297,28 @@ function renderBlock(b: Block, jump: Jump | undefined): ReactNode {
     case "heading": {
       // The chat is already inside an h2 region and these are only emphasis, so
       // every level renders at one weight rather than reopening the type scale.
-      return <p className="md-h">{inline(b.text, jump, "h")}</p>;
+      return <p className="md-h">{inline(b.text, ctx, "h")}</p>;
     }
     case "list":
       return b.ordered ? (
         <ol className="md-list">
           {b.items.map((it, i) => (
-            <li key={i}>{inline(it, jump, `li${i}`)}</li>
+            <li key={i}>{inline(it, ctx, `li${i}`)}</li>
           ))}
         </ol>
       ) : (
         <ul className="md-list">
           {b.items.map((it, i) => (
-            <li key={i}>{inline(it, jump, `li${i}`)}</li>
+            <li key={i}>{inline(it, ctx, `li${i}`)}</li>
           ))}
         </ul>
       );
     case "quote":
-      return <blockquote className="md-quote">{inline(b.text, jump, "q")}</blockquote>;
+      return <blockquote className="md-quote">{inline(b.text, ctx, "q")}</blockquote>;
     case "rule":
       return <hr className="md-rule" />;
     case "para":
-      return <p className="md-p">{inline(b.text, jump, "p")}</p>;
+      return <p className="md-p">{inline(b.text, ctx, "p")}</p>;
   }
 }
 
@@ -282,13 +332,13 @@ function renderBlock(b: Block, jump: Jump | undefined): ReactNode {
 const INLINE =
   /(`+)([\s\S]+?)\1|\*\*([\s\S]+?)\*\*|\*([^*\n]+?)\*|\b_([^_\n]+?)_\b|\[([^\]]+)\]\(([^)\s]+)\)/g;
 
-function inline(text: string, jump: Jump | undefined, keyBase: string): ReactNode[] {
+function inline(text: string, ctx: Ctx | undefined, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   INLINE.lastIndex = 0;
 
   for (let m = INLINE.exec(text); m; m = INLINE.exec(text)) {
-    if (m.index > last) out.push(...linkify(text.slice(last, m.index), jump, `${keyBase}:${last}`));
+    if (m.index > last) out.push(...linkify(text.slice(last, m.index), ctx, `${keyBase}:${last}`));
     const key = `${keyBase}:i${m.index}`;
     const [, , code, bold, star, under, linkText, href] = m;
 
@@ -297,22 +347,27 @@ function inline(text: string, jump: Jump | undefined, keyBase: string): ReactNod
       // the same unreadable FEN as the fenced one.
       out.push(
         <code key={key} className="md-code-inline">
-          {linkify(code, jump, key)}
+          {linkify(code, ctx, key)}
         </code>,
       );
     } else if (bold !== undefined) {
-      out.push(<strong key={key}>{linkify(bold, jump, key)}</strong>);
+      out.push(<strong key={key}>{linkify(bold, ctx, key)}</strong>);
     } else if (star !== undefined || under !== undefined) {
-      out.push(<em key={key}>{linkify((star ?? under) as string, jump, key)}</em>);
+      out.push(<em key={key}>{linkify((star ?? under) as string, ctx, key)}</em>);
     } else if (linkText !== undefined) {
-      // Only http(s) — the agent writes Lichess training links, and anything
-      // else in a href position is not something to hand a click to.
-      const safe = /^https?:\/\//i.test(href);
+      // Three cases, in order. An http(s) href is a real link — the coach writes
+      // Lichess training links. Anything else is either a move tag naming a
+      // position, or nothing: an href that resolves to no position renders as
+      // its own text, so a stale line id or a mislabelled move costs the link
+      // and never moves the board.
+      const move = /^https?:\/\//i.test(href) ? null : ctx && resolveMove(href, linkText, ctx);
       out.push(
-        safe ? (
+        /^https?:\/\//i.test(href) ? (
           <a key={key} href={href} target="_blank" rel="noreferrer">
             {linkText}
           </a>
+        ) : move ? (
+          linkButton(move, key)
         ) : (
           <Fragment key={key}>{linkText}</Fragment>
         ),
@@ -321,6 +376,6 @@ function inline(text: string, jump: Jump | undefined, keyBase: string): ReactNod
     last = m.index + m[0].length;
   }
 
-  if (last < text.length) out.push(...linkify(text.slice(last), jump, `${keyBase}:${last}`));
+  if (last < text.length) out.push(...linkify(text.slice(last), ctx, `${keyBase}:${last}`));
   return out;
 }
