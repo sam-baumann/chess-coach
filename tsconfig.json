@@ -8,6 +8,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    /* Only the web project actually compiles JSX (vite reads tsconfig.web.json),
+       but tsx resolves this file when running the tests, and without it the .tsx
+       components it pulls in compile against a React global that isn't there. */
+    "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "noEmit": true

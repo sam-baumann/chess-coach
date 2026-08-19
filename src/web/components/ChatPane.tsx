@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Game, ReviewEvent, ReviewSession } from "@shared/events.ts";
+import type { ReviewEvent, ReviewSession } from "@shared/events.ts";
 import { api, streamReview } from "../api.ts";
 import { buildJump } from "../jump.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -18,7 +18,6 @@ export function ChatPane({
   session,
   moves,
   fens,
-  userColor,
   onJump,
   onFen,
   onVariation,
@@ -26,12 +25,11 @@ export function ChatPane({
   session: ReviewSession;
   moves: string[];
   fens: string[];
-  userColor: Game["userColor"];
   onJump: (ply: number) => void;
   /** Show a position the coach quoted that the game never reached. */
   onFen: (fen: string) => void;
-  /** Show the position after a move the coach named but the game never played. */
-  onVariation: (line: string) => void;
+  /** Show a half-move of a line the coach named but the game never played. */
+  onVariation: (line: string, step: number) => void;
 }) {
   const [items, setItems] = useState<Item[]>(() =>
     session.messages.map((m) => ({
@@ -50,8 +48,8 @@ export function ChatPane({
 
   /** Position references in the coach's replies become board moves — see buildJump. */
   const jump = useMemo(
-    () => buildJump({ fens, moves, userColor, onJump, onFen, onVariation }),
-    [fens, moves, userColor, onJump, onFen, onVariation],
+    () => buildJump({ fens, moves, onJump, onFen, onVariation }),
+    [fens, moves, onJump, onFen, onVariation],
   );
 
   useEffect(() => {

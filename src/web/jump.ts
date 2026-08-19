@@ -4,28 +4,40 @@
  *
  * Split out of the chat pane because this is the rule that decides whether a
  * click shows the right position, and getting it wrong is invisible: the board
- * moves either way. It used to resolve a numbered move by its number alone, so
- * "10.a3" — a move the game never played — put the played 10.Qb3 on the board
- * and captioned it a3. The notation, not the number, decides.
+ * moves either way.
+ *
+ * There are exactly two kinds of reference, and both are stated by the coach
+ * rather than recognised in the prose. A tagged move — `[dxc4](A:14:..)` — names
+ * the line it belongs to (`game` for the move actually played), its move number
+ * and its side, which is everything needed to point at one half-move; see
+ * lines.ts. A quoted FEN names a position outright. Nothing else in a message is
+ * a reference, so notation the coach didn't tag stays the text the user reads,
+ * and the wrong-position bugs this file used to be about — a move number
+ * matching the played move and the suggested one, a move inside a line whose
+ * position the game never held — can no longer be expressed.
  */
+import { GAME, type DeclaredLine, type Tag } from "./lines.ts";
 import { plyLabel, plyOf, sameMove } from "./ply.ts";
 
-/**
- * What a numbered move reference turns out to denote. The coach names the move
- * it wishes had been played as freely as the one that was, and the two have to
- * end up in different places: only one of them is a position the game holds.
- */
+/** What a tagged move turns out to denote. */
 export type MoveTarget =
   | { kind: "game"; ply: number }
-  /** Notation for a move the game didn't play, as written ("10.a3"). */
-  | { kind: "variation"; line: string }
+  /**
+   * A position off the game: the whole line to replay, and which half-move of it
+   * the tag named. The moves before it are what make the position exist.
+   */
+  | { kind: "variation"; line: string; step: number }
   | null;
 
 export type Jump = {
   /** Board index for a FEN the sweep actually produced, or null if unknown. */
   resolveFen: (fen: string) => number | null;
-  /** Where a numbered move reference points, or null if it points nowhere. */
-  resolveMove: (moveNumber: number, black: boolean | null, san: string | null) => MoveTarget;
+  /**
+   * Where a tagged move points, or null if it points nowhere. `text` is what the
+   * link says, checked against the move the tag names; `lines` are the message's
+   * declarations.
+   */
+  resolveTag: (tag: Tag, text: string, lines: DeclaredLine[]) => MoveTarget;
   /** Scoresheet notation for a board index, used as the link's text. */
   label: (ply: number) => string;
   onJump: (ply: number) => void;
@@ -37,9 +49,10 @@ export type Jump = {
   /**
    * The same, for a what-if written as notation rather than a FEN. The position
    * has to be replayed from the line before it can be shown, which is work the
-   * board's owner does — hence a line in, nothing back.
+   * board's owner does — hence a line in, nothing back. `step` is the half-move
+   * of that line to stop at, counting from 0.
    */
-  onVariation?: (line: string) => void;
+  onVariation?: (line: string, step: number) => void;
 };
 
 export interface JumpContext {
@@ -47,26 +60,18 @@ export interface JumpContext {
   fens: string[];
   /** The game's SAN moves. Available with or without a sweep. */
   moves: string[];
-  userColor: "white" | "black" | null;
   onJump: (ply: number) => void;
   onFen: (fen: string) => void;
-  onVariation: (line: string) => void;
+  onVariation: (line: string, step: number) => void;
 }
 
 /**
  * Without the sweep there are no scanned positions to jump to, so references
  * into the game resolve to null and stay plain text rather than becoming buttons
- * that do nothing — but a what-if resolves either way, since showing a position
- * the game never reached needs no scan.
+ * that do nothing — but a move in a declared line resolves either way, since
+ * showing a position the game never reached needs no scan.
  */
-export function buildJump({
-  fens,
-  moves,
-  userColor,
-  onJump,
-  onFen,
-  onVariation,
-}: JumpContext): Jump {
+export function buildJump({ fens, moves, onJump, onFen, onVariation }: JumpContext): Jump {
   const swept = fens.length > 1;
 
   // Keyed on the first four FEN fields: the half-move and full-move counters
@@ -78,21 +83,19 @@ export function buildJump({
   return {
     resolveFen: (fen) => (swept ? byFen.get(key(fen)) ?? null : null),
 
-    resolveMove: (moveNumber, black, san) => {
-      // A bare "move 13" doesn't say which side; the coach is nearly always
-      // talking about the user's own move, so that is the reading taken.
-      const side = black ?? userColor === "black";
-      const ply = plyOf(moveNumber, side);
-      if (ply < 1 || ply > moves.length) return null;
+    resolveTag: (tag, text, lines) => {
+      const ply = plyOf(tag.moveNumber, tag.black);
 
-      // The move number alone cannot tell "the move you played" from "the move
-      // that wins" — both are written `10.<something>` and land on the same ply.
-      // Only the notation separates them, so it decides: the move on the
-      // scoresheet moves the scrubber, any other move is a line to replay.
-      if (san && !sameMove(san, moves[ply - 1])) {
-        return { kind: "variation", line: `${moveNumber}${side ? "..." : "."}${san}` };
+      if (tag.line === GAME) {
+        if (ply < 1 || ply > moves.length || !swept || ply >= fens.length) return null;
+        return agrees(text, moves[ply - 1]) ? { kind: "game", ply } : null;
       }
-      return swept && ply < fens.length ? { kind: "game", ply } : null;
+
+      const line = lines.find((l) => l.id === tag.line);
+      if (!line) return null;
+      const step = line.steps.findIndex((s) => s.ply === ply);
+      if (step === -1 || !agrees(text, line.steps[step].san)) return null;
+      return { kind: "variation", line: line.notation, step };
     },
 
     label: (ply) => plyLabel(ply, moves),
@@ -100,4 +103,18 @@ export function buildJump({
     onFen,
     onVariation,
   };
+}
+
+/**
+ * Whether a link's text is consistent with the move its tag points at.
+ *
+ * The tag says *where* and the text says *what*, so a disagreement means one of
+ * them is wrong and there is no way to tell which — a mislabelled tag then costs
+ * the link rather than showing a position the sentence isn't about. Text that
+ * isn't notation at all ("the knight jump") makes no claim to check, and passes.
+ */
+function agrees(text: string, san: string): boolean {
+  const written = /^\s*(?:\d{1,3}\s*(?:\.{1,3}|…)\s*)?(\S+?)\s*$/.exec(text)?.[1];
+  if (!written || !/^[KQRBNOa-h]/.test(written)) return true;
+  return sameMove(written, san);
 }
