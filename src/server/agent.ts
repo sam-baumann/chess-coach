@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 import {
   query,
   type HookCallback,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
+  type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Game, ReviewEvent, ReviewMessage, ReviewSession } from "../shared/events.ts";
 import { REPO_ROOT } from "./config.ts";
@@ -78,6 +80,78 @@ const guardBash: HookCallback = async (input) => {
     },
   };
 };
+
+/**
+ * OS-level isolation for the agent's Bash commands, layered *under* `guardBash`.
+ *
+ * The hook can only pattern-match a command string, and the agent reaches for an
+ * interpreter constantly — of 44 Bash calls across six recorded reviews, 24 were
+ * inline `python3 -c`. `shutil.rmtree`, `urllib`, and `subprocess` all sail past
+ * a regex, so the boundary has to sit below the shell rather than in front of it.
+ * bubblewrap enforces these rules on every child process regardless of what the
+ * model actually ran.
+ *
+ * Delivered through `settings` rather than the sibling `sandbox` option so it
+ * lands in the flag-settings layer. `strictAllowlist` is ignored in project
+ * scope, and that key is the difference between denying an unknown host and
+ * prompting a user who isn't there.
+ */
+export function sandboxSettings(): Settings {
+  const home = homedir();
+  const localSettings = join(REPO_ROOT, ".claude", "settings.local.json");
+
+  return {
+    sandbox: {
+      enabled: true,
+      // The SDK defaults this to true when `enabled` comes in via its own option,
+      // but not via `settings`. Stated outright: a hub whose sandbox silently
+      // failed to start would look identical to one that never had it.
+      failIfUnavailable: true,
+      // Without this the model can retry any blocked command with
+      // `dangerouslyDisableSandbox`, which then meets `permissionMode: "dontAsk"`
+      // and is approved. The escape hatch assumes a human at the prompt.
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      filesystem: {
+        // cwd is REPO_ROOT and is writable by default, which already covers
+        // notes/game-log.md, data/sweeps, and reviews/. uv is the one thing that
+        // writes outside it; with the cache read-only it dies on its own lock
+        // file ("failed to open .../sdists-v9/.git: Read-only file system").
+        allowWrite: ["~/.cache/uv"],
+      },
+      network: {
+        // lichess.org for the public game export the coach curls directly.
+        // PyPI because `uv run --with chess` re-checks the index on every run
+        // even with the wheel already cached, so a sweep fails without it.
+        allowedDomains: ["lichess.org", "pypi.org", "files.pythonhosted.org"],
+        // Deny rather than prompt. Nothing can answer a prompt here.
+        strictAllowlist: true,
+      },
+      credentials: {
+        // Sandbox reads default to the *whole machine*; only writes are scoped to
+        // cwd. Without these three, `cat ~/.ssh/id_ed25519` succeeds inside the
+        // sandbox. The Lichess token is the awkward one: it lives inside cwd, so
+        // no amount of home-directory denying reaches it.
+        files: [
+          { path: "~/.ssh", mode: "deny" },
+          { path: "~/.claude/.credentials.json", mode: "deny" },
+          { path: localSettings, mode: "deny" },
+        ],
+      },
+    },
+    permissions: {
+      // Read/Edit/Write never enter the sandbox — they answer to the permission
+      // system directly — so the same three paths need denying twice, once per
+      // route. Note the syntax differs from the sandbox paths above: permission
+      // rules take `//` for an absolute path.
+      deny: [
+        `Read(//${home}/.ssh/**)`,
+        `Read(//${home}/.claude/**)`,
+        `Read(//${localSettings})`,
+      ],
+    },
+  };
+}
 
 function hubContext(game: Game, scanRelPath: string | null): string {
   const lines = [
@@ -502,6 +576,10 @@ export function attach(sessionId: string, game: Game): EventEmitter {
       model: process.env.HUB_MODEL ?? "claude-opus-5",
       permissionMode: "dontAsk",
       allowedTools: ALLOWED_TOOLS,
+      settings: sandboxSettings(),
+      // Kept as a second layer. It catches nothing the sandbox doesn't, but it
+      // denies before the command runs rather than after, and it survives a
+      // sandbox that failed to start (which `failIfUnavailable` should prevent).
       hooks: { PreToolUse: [{ hooks: [guardBash] }] },
       includePartialMessages: true,
       systemPrompt: {
