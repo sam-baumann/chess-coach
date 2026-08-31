@@ -72,7 +72,7 @@ uv run --with chess python .claude/skills/stockfish-local/scripts/scan_game.py \
   --moves "e4 e5 Nf3 Nc6 c3 ..." --depth 18 > scan.json
 ```
 
-Accepts `--moves "<SAN list>"` (what `lichess-fetch` returns) or `--pgn <file|->`. Emits one
+Accepts `--moves "<SAN list>"` (the move list the hub stores for a game) or `--pgn <file|->`. Emits one
 row per ply with `loss`, `engine_best`, and the FEN either side of the move. Each position is
 searched once, so a 64-ply game is 65 searches, not 130.
 

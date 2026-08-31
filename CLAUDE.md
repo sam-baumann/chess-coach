@@ -68,12 +68,12 @@ session is the one recurring habit, if there is one.
 **Puzzle training** — Present the position, wait for the user's answer, then explain.
 
 **Player review** — When given a Lichess username, look for recurring patterns across games.
-Read `notes/game-log.md` alongside the fetched games — the log already holds the pattern
-work from past sessions — and log the sweep as a single `player review` entry.
+The hub syncs those games itself; work from what it has rather than fetching them yourself.
+Read `notes/game-log.md` alongside them — the log already holds the pattern work from past
+sessions — and log the sweep as a single `player review` entry.
 
 ## Available skills
 
-- `lichess-fetch` — fetch a Lichess user's recent games (filters: max, perfType, rated, color), or other Lichess data. Returns players, ratings, result, opening name, and the full move list per game.
 - `stockfish-local` — evaluate a position or find the best move with a local Stockfish engine, asking the user to install it if it isn't on PATH. Also carries the two-pass whole-game sweep (`scan_game.py` → `probe_moments.py`) that locates critical moments by centipawn loss. Sweeps take minutes — run them in the background.
 - `game-review` — build a published review page (board diagrams, evaluation trace, Socratic moment cards) from a completed sweep. Only when the user wants something to keep or share.
 

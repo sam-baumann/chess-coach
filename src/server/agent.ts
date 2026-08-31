@@ -20,9 +20,9 @@ import { PROBE_SCRIPT, scanPath, sweepStatus } from "./sweep.ts";
  * The agent side of the hub.
  *
  * The skills under .claude/skills are loaded straight off the filesystem — the
- * SDK discovers them from the `project` setting source, so lichess-fetch,
- * stockfish-local, and game-review run here exactly as they do in a terminal
- * session, and CLAUDE.md supplies the coaching persona. Nothing is reimplemented.
+ * SDK discovers them from the `project` setting source, so stockfish-local and
+ * game-review drive the review here, and CLAUDE.md supplies the coaching
+ * persona. Nothing is reimplemented.
  *
  * One long-lived Query per active review, driven by a push queue, so follow-up
  * turns don't re-pay process startup. The agent's own session id is persisted so

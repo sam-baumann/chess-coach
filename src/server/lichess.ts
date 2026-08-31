@@ -51,8 +51,9 @@ export interface FetchOptions {
 
 /**
  * Pull recent games as NDJSON — one JSON object per line, newest first. This is
- * not a JSON array; parsing the body wholesale fails. Query shape mirrors the
- * lichess-fetch skill so the hub and a terminal session see identical data.
+ * not a JSON array; parsing the body wholesale fails. This is the only
+ * authenticated Lichess access in the project — the agent has no token and no
+ * reason to fetch a game list itself.
  */
 export async function fetchGames(opts: FetchOptions): Promise<Game[]> {
   const token = lichessToken();
