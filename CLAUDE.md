@@ -68,14 +68,35 @@ session is the one recurring habit, if there is one.
 **Puzzle training** — Present the position, wait for the user's answer, then explain.
 
 **Player review** — When given a Lichess username, look for recurring patterns across games.
-Read `notes/game-log.md` alongside the fetched games — the log already holds the pattern
-work from past sessions — and log the sweep as a single `player review` entry.
+The hub syncs those games itself; work from what it has rather than fetching them yourself.
+Read `notes/game-log.md` alongside them — the log already holds the pattern work from past
+sessions — and log the sweep as a single `player review` entry.
 
 ## Available skills
 
-- `lichess-fetch` — fetch a Lichess user's recent games (filters: max, perfType, rated, color), or other Lichess data. Returns players, ratings, result, opening name, and the full move list per game.
-- `stockfish-local` — evaluate a position or find the best move with a local Stockfish engine, installing it first if needed. Also carries the two-pass whole-game sweep (`scan_game.py` → `probe_moments.py`) that locates critical moments by centipawn loss. Sweeps take minutes — run them in the background.
+- `stockfish-local` — evaluate a position or find the best move with a local Stockfish engine, asking the user to install it if it isn't on PATH. Also carries the two-pass whole-game sweep (`scan_game.py` → `probe_moments.py`) that locates critical moments by centipawn loss. Sweeps take minutes — run them in the background.
 - `game-review` — build a published review page (board diagrams, evaluation trace, Socratic moment cards) from a completed sweep. Only when the user wants something to keep or share.
+
+## Pulling extra data from Lichess
+
+The hub syncs the game list and stores the moves, so you rarely need to fetch
+anything. When you do want something it doesn't keep — clock times and move
+timings are the usual ones — `curl` the public export endpoint directly:
+
+```bash
+curl -sL "https://lichess.org/game/export/<gameId>?clocks=true" -H "Accept: application/x-chess-pgn"
+```
+
+`specs/lichess-api.json` is the full OpenAPI spec (172 paths) if you need
+anything beyond that. **Don't read it whole — it's 1.5MB.** Look up the one path
+you want, e.g.:
+
+```bash
+python3 -c "import json;print(json.dumps(json.load(open('specs/lichess-api.json'))['paths']['/game/export/{gameId}'],indent=1))"
+```
+
+You have no API token, so public endpoints only. Anything needing auth is the
+server's job, not yours.
 
 ## Python dependencies
 

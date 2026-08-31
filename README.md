@@ -31,9 +31,9 @@ one you get in the terminal, not a reimplementation of them.
 
 **What it needs**
 
-- A Lichess API token in `.claude/settings.local.json` under `env.LICHESS_API_TOKEN` (the same
-  place the `lichess-fetch` skill reads it from). The UI shows setup instructions if it's missing.
-- `stockfish` on PATH for engine sweeps (`brew install stockfish` / `apt-get install -y stockfish`).
+- A Lichess API token in `.claude/settings.local.json` under `env.LICHESS_API_TOKEN`, read by
+  the server when it syncs your games. The UI shows setup instructions if it's missing.
+- `stockfish` on PATH for engine sweeps (`brew install stockfish` / `sudo apt-get install stockfish`).
 - `uv` for the analysis scripts.
 - Claude credentials for the agent — an `ANTHROPIC_API_KEY`, or an existing Claude Code login.
 

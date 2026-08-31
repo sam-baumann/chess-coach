@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 import {
   query,
   type HookCallback,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
+  type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Game, ReviewEvent, ReviewMessage, ReviewSession } from "../shared/events.ts";
 import { REPO_ROOT } from "./config.ts";
@@ -18,16 +20,16 @@ import { PROBE_SCRIPT, scanPath, sweepStatus } from "./sweep.ts";
  * The agent side of the hub.
  *
  * The skills under .claude/skills are loaded straight off the filesystem — the
- * SDK discovers them from the `project` setting source, so lichess-fetch,
- * stockfish-local, and game-review run here exactly as they do in a terminal
- * session, and CLAUDE.md supplies the coaching persona. Nothing is reimplemented.
+ * SDK discovers them from the `project` setting source, so stockfish-local and
+ * game-review drive the review here, and CLAUDE.md supplies the coaching
+ * persona. Nothing is reimplemented.
  *
  * One long-lived Query per active review, driven by a push queue, so follow-up
  * turns don't re-pay process startup. The agent's own session id is persisted so
  * a server restart can `resume` rather than losing the thread.
  */
 
-const ALLOWED_TOOLS = [
+export const ALLOWED_TOOLS = [
   "Read",
   "Write",
   "Edit",
@@ -36,7 +38,6 @@ const ALLOWED_TOOLS = [
   "Bash",
   "Skill",
   "TodoWrite",
-  "WebFetch",
 ];
 
 /**
@@ -78,6 +79,148 @@ const guardBash: HookCallback = async (input) => {
     },
   };
 };
+
+/**
+ * OS-level isolation for the agent, layered *under* `guardBash`.
+ *
+ * The hook can only pattern-match a command string, and the agent reaches for an
+ * interpreter constantly — of 44 Bash calls across six recorded reviews, 24 were
+ * inline `python3 -c`. `shutil.rmtree`, `urllib`, and `subprocess` all sail past
+ * a regex, so the boundary has to sit below the shell rather than in front of it.
+ * bubblewrap enforces these rules on every child process regardless of what the
+ * model actually ran.
+ *
+ * Delivered through `settings` rather than the sibling `sandbox` option so it
+ * lands in the flag-settings layer. `strictAllowlist` is ignored in project
+ * scope, and that key is the difference between denying an unknown host and
+ * prompting a user who isn't there.
+ */
+
+/**
+ * Paths no tool may read. One list, because `Read(...)` deny rules are merged
+ * into the sandbox's own `denyRead`: a single entry here covers both Bash and
+ * the Read/Edit/Write tools, which never enter the sandbox at all. Two parallel
+ * lists would drift, and a path present in only one fails open on the other route.
+ *
+ * The list is required because sandbox reads default to the *whole machine* —
+ * only writes are scoped to cwd. Without it `cat ~/.ssh/id_ed25519` succeeds
+ * inside the sandbox.
+ */
+function deniedReads(home: string): string[] {
+  return [
+    `${home}/.ssh`,
+    // A sibling of ~/.claude, not a child: a rule on `.claude/**` misses it, and
+    // it holds 80KB of account and session state.
+    `${home}/.claude.json`,
+    `${home}/.claude`,
+    `${home}/.config/gh`,
+    `${home}/.config/gcloud`,
+    `${home}/.codex`,
+    `${home}/.aws`,
+    `${home}/.gnupg`,
+    `${home}/.docker`,
+    `${home}/.kube`,
+    `${home}/.netrc`,
+    `${home}/.git-credentials`,
+    `${home}/.npmrc`,
+    `${home}/.bash_history`,
+  ];
+}
+
+/**
+ * Paths no tool may write. Bash is already confined to cwd by the sandbox, and
+ * the sandbox's own protected paths cover `.claude/settings*` and `.claude/skills`
+ * even inside cwd — but Edit and Write bypass the sandbox entirely, so the
+ * config and the code that loads it need denying explicitly. Without this the
+ * agent can edit its own sandbox settings, or a skill, and the change takes
+ * effect on the next server restart.
+ */
+function deniedWrites(home: string): string[] {
+  return [
+    `${REPO_ROOT}/src`,
+    `${REPO_ROOT}/.claude`,
+    // Bash can't reach these (writes are scoped to cwd), but Write can, and a
+    // line appended to a shell profile is code execution on the host at next login.
+    `${home}/.bashrc`,
+    `${home}/.bash_profile`,
+    `${home}/.profile`,
+    `${home}/.zshrc`,
+    `${home}/.config/autostart`,
+    `${home}/.local/bin`,
+  ];
+}
+
+/** uv honours these before falling back to ~/.cache/uv; a mismatch fails every sweep. */
+function uvCacheDir(): string {
+  const explicit = process.env.UV_CACHE_DIR;
+  if (explicit) return explicit;
+  const xdg = process.env.XDG_CACHE_HOME;
+  return xdg ? join(xdg, "uv") : "~/.cache/uv";
+}
+
+/**
+ * Permission rules spell an absolute path as `//path`, i.e. the `//` prefix
+ * followed by the path *without* its own leading slash. Concatenating `//` onto
+ * an already-absolute path yields `///home/...`, which matches nothing and so
+ * fails open — the one direction a malformed rule must never fail.
+ */
+function absoluteRule(tool: "Read" | "Edit", path: string): string {
+  return `${tool}(//${path.replace(/^\/+/, "")})`;
+}
+
+export function agentSettings(): Settings {
+  const home = homedir();
+  // Written as a glob rather than the bare path: the sandbox skips a read-deny
+  // entry whose file does not exist at startup, and settings.local.json is absent
+  // until the user adds their token.
+  const localSettings = `${REPO_ROOT}/.claude/settings*.json`;
+
+  return {
+    sandbox: {
+      enabled: true,
+      // The SDK defaults this to true when `enabled` comes in via its own option,
+      // but not via `settings`. Stated outright: a hub whose sandbox silently
+      // failed to start would look identical to one that never had it.
+      failIfUnavailable: true,
+      // Makes the CLI ignore the `dangerouslyDisableSandbox` parameter outright,
+      // rather than leaving the escape hatch to be caught further down the
+      // permission pipeline. Every command runs sandboxed or not at all.
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      filesystem: {
+        // cwd is REPO_ROOT and is writable by default, which already covers
+        // notes/game-log.md, data/sweeps, and reviews/. uv is the one thing that
+        // writes outside it; with the cache read-only it dies on its own lock
+        // file ("failed to open .../sdists-v9/.git: Read-only file system").
+        allowWrite: [uvCacheDir()],
+      },
+      network: {
+        // lichess.org for the public game export the coach curls directly.
+        // PyPI because `uv run --with chess` re-checks the index on every run
+        // even with the wheel already cached, so a sweep fails without it.
+        allowedDomains: ["lichess.org", "pypi.org", "files.pythonhosted.org"],
+        // Deny rather than prompt. Nothing here can answer a prompt.
+        //
+        // Note this gates sandboxed commands only. In-process tools are not
+        // covered, which is why WebFetch is denied below rather than left to
+        // this allowlist.
+        strictAllowlist: true,
+      },
+    },
+    permissions: {
+      deny: [
+        // A bare allowedTools entry auto-approves a whole tool before any
+        // callback or scoped rule is consulted, and `strictAllowlist` explicitly
+        // does not reach in-process tools — so WebFetch would be unrestricted
+        // egress straight past the network allowlist. Unused in six reviews.
+        "WebFetch",
+        ...deniedReads(home).map((p) => absoluteRule("Read", p)),
+        absoluteRule("Read", localSettings),
+        ...deniedWrites(home).map((p) => absoluteRule("Edit", p)),
+      ],
+    },
+  };
+}
 
 function hubContext(game: Game, scanRelPath: string | null): string {
   const lines = [
@@ -502,6 +645,12 @@ export function attach(sessionId: string, game: Game): EventEmitter {
       model: process.env.HUB_MODEL ?? "claude-opus-5",
       permissionMode: "dontAsk",
       allowedTools: ALLOWED_TOOLS,
+      settings: agentSettings(),
+      // Kept, and load-bearing: cwd is writable by design, so `rm -rf notes/`
+      // is permitted by the sandbox and blocked only here. That makes the hook
+      // the sole guard on notes/game-log.md — gitignored, unrecoverable, and the
+      // one file whose loss the user would actually feel. It is also the weaker
+      // layer there, since the same delete via `python3 -c` walks straight past it.
       hooks: { PreToolUse: [{ hooks: [guardBash] }] },
       includePartialMessages: true,
       systemPrompt: {

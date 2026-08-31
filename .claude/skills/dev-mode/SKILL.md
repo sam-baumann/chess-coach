@@ -30,8 +30,7 @@ pnpm test        # node:test — game-log parser, recurrence rule, chat position
 ## Architecture
 
 **Skills (in `.claude/skills/`):**
-- `lichess-fetch` — fetches games/player data from the Lichess API via `curl`. Spec: `specs/lichess-api.json` (base URL `https://lichess.org`; some endpoints stream NDJSON; auth via Bearer token).
-- `stockfish-local` — installs Stockfish if missing, then evaluates positions by piping UCI commands into it. Spec: `specs/uci_spec.md` (communication via stdin/stdout: send `position`/`go`, read `bestmove`/`info` lines). Also ships `scripts/scan_game.py` and `scripts/probe_moments.py` for the two-pass whole-game sweep.
+- `stockfish-local` — evaluates positions by piping UCI commands into it. Spec: `specs/uci_spec.md` (communication via stdin/stdout: send `position`/`go`, read `bestmove`/`info` lines). Also ships `scripts/scan_game.py` and `scripts/probe_moments.py` for the two-pass whole-game sweep.
 - `game-review` — builds a published review page from a completed sweep. Ships `template.html` plus `scripts/` for board diagrams, the evaluation trace, replaying a line into positions, and a both-themes preview/audit.
 - `dev-mode` (this skill) — switches Claude out of the chess-coach persona for codebase work.
 

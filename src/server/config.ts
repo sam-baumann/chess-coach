@@ -51,10 +51,14 @@ export function ensureGameLog(): void {
 }
 
 /**
- * The Lichess token lives in `.claude/settings.local.json` under `env`, which is
- * how the lichess-fetch skill already sources it and is already gitignored.
- * Reading it from there rather than inventing a second `.env` keeps one place to
- * rotate the secret. An env var still wins, for running the server elsewhere.
+ * The Lichess token lives in `.claude/settings.local.json` under `env`, a file
+ * that is already gitignored. Reading it from there rather than inventing a
+ * second `.env` keeps one place to rotate the secret. An env var still wins, for
+ * running the server elsewhere.
+ *
+ * Only the server reads this. `settingSources` excludes `local`, so the token is
+ * never injected into the agent's environment, and `agentSettings()` denies the
+ * file to every tool besides.
  */
 export function lichessToken(): string | null {
   const fromEnv = process.env.LICHESS_API_TOKEN;
@@ -72,9 +76,9 @@ export function lichessToken(): string | null {
 }
 
 /**
- * The username the coach treats as "the user", stored by lichess-fetch in
- * `.claude/lichess-user.local.md`. Reusing that file means the UI and a terminal
- * session agree on whose games these are without a second prompt.
+ * The username the coach treats as "the user", read from
+ * `.claude/lichess-user.local.md` so the hub knows whose games these are without
+ * asking again on every sync.
  */
 export function storedUsername(): string | null {
   try {

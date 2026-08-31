@@ -1,18 +1,32 @@
 ---
 name: stockfish-local
-description: Evaluate chess positions or find the best move with a local Stockfish engine, installing Stockfish first if it isn't already available. Use for engine evaluation, blunder-checking, or "what's the best move here" during game review or puzzle work.
+description: Evaluate chess positions or find the best move with a local Stockfish engine, asking the user to install it if it is not already on PATH. Use for engine evaluation, blunder-checking, or "what's the best move here" during game review or puzzle work.
 ---
 
 Drive Stockfish directly over UCI via Bash — no wrapper process to manage, just pipe a command sequence in and read the output. Full protocol reference: `specs/uci_spec.md`.
 
-## 1. Make sure Stockfish is installed
+## 1. Check Stockfish is available
 
 ```bash
-command -v stockfish || brew install stockfish   # macOS
-command -v stockfish || apt-get install -y stockfish   # Debian/Ubuntu
+command -v stockfish
 ```
 
-If neither package manager applies, tell the user and point them at https://stockfishchess.org/download/ rather than guessing at a build process.
+If that prints a path, carry on. If it prints nothing, **stop and ask the user to
+install it — do not try to install it yourself.** Package installs need root, and
+in the hub the agent runs sandboxed with no route to a distro mirror, so an
+attempt burns a turn and fails with an error that looks like a bug rather than a
+missing dependency.
+
+Give them the one line for their platform and wait:
+
+```bash
+sudo apt-get install stockfish   # Debian/Ubuntu
+brew install stockfish           # macOS
+```
+
+Anywhere else, point at https://stockfishchess.org/download/ rather than guessing
+at a build process. Say plainly what is blocked in the meantime: engine
+evaluation and the whole-game sweep, though the rest of a review still works.
 
 ## 2. Evaluate a position
 
@@ -58,7 +72,7 @@ uv run --with chess python .claude/skills/stockfish-local/scripts/scan_game.py \
   --moves "e4 e5 Nf3 Nc6 c3 ..." --depth 18 > scan.json
 ```
 
-Accepts `--moves "<SAN list>"` (what `lichess-fetch` returns) or `--pgn <file|->`. Emits one
+Accepts `--moves "<SAN list>"` (the move list the hub stores for a game) or `--pgn <file|->`. Emits one
 row per ply with `loss`, `engine_best`, and the FEN either side of the move. Each position is
 searched once, so a 64-ply game is 65 searches, not 130.
 
