@@ -96,7 +96,7 @@ export function stockfishMissingHelp(): string {
     "Stockfish is not on PATH, so the engine sweep cannot run.",
     "",
     "  macOS:         brew install stockfish",
-    "  Debian/Ubuntu: apt-get install -y stockfish",
+    "  Debian/Ubuntu: sudo apt-get install stockfish",
     "",
     "Otherwise download a build from https://stockfishchess.org/download/ and put it on PATH.",
   ].join("\n");
