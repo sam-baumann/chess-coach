@@ -39,6 +39,7 @@
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -92,6 +93,7 @@ nav.tabs button[aria-current="page"] {
 
 /* ---- generic controls ---- */
 button, input, textarea, select { font-size: 13px; color: inherit; }
+button { touch-action: manipulation; }
 .btn {
   background: var(--accent); color: var(--bg); border: 1px solid var(--accent);
   border-radius: 2px; padding: 8px 15px; cursor: pointer;
@@ -173,6 +175,10 @@ table.games tbody tr { cursor: pointer; }
   .review { grid-template-columns: 1fr; }
   .app:has(.review-page) { height: auto; }
   .review > .chat-col { height: 70dvh; }
+  /* Grid items default to min-width:auto, so one unbreakable line in the chat
+     (a code block, a URL) stretches the column past the viewport instead of
+     scrolling inside its own box. */
+  .review > * { min-width: 0; }
 }
 
 /* Ply nav: the arrows hold station. The move readout is the only variable-width
@@ -382,3 +388,56 @@ svg.trace { display: block; width: 100%; height: 124px; min-width: 0; }
 
 .notice { border-left: 3px solid var(--warn); white-space: pre-wrap; font-size: 13.5px; }
 .notice pre { white-space: pre-wrap; margin: 0; font-size: 12.5px; }
+
+/* ---- phones ---- */
+/* Inputs are 16px here because iOS Safari zooms the page on focusing anything
+   smaller, and never zooms back out. Controls get a 40-44px hit area; the
+   desktop sizes are denser than a thumb can reliably hit. The games table
+   becomes a stack of cards — six columns cannot share 360px without either
+   clipping the engine cell or scrolling sideways. */
+@media (max-width: 600px) {
+  .app { padding: 0 14px 20px; }
+  header.top { padding: 20px 0 14px; margin-bottom: 18px; gap: 14px; }
+  h1 { font-size: 18px; }
+  nav.tabs { width: 100%; }
+  nav.tabs button { flex: 1; min-height: 44px; padding: 7px 10px; }
+  nav.tabs button:last-child { flex: 0 0 48px; font-size: 16px; }
+
+  input[type="text"], textarea { font-size: 16px; }
+  .btn { min-height: 40px; }
+  .toolbar { gap: 8px; }
+  .toolbar input[type="text"] { flex: 1 1 100%; min-height: 44px; }
+  .toolbar .btn { flex: 1 1 auto; }
+
+  table.games, table.games tbody { display: block; }
+  table.games thead { display: none; }
+  table.games tr {
+    display: grid; grid-template-columns: auto 1fr auto;
+    grid-template-areas: "opp opp res" "open open open" "date time eng";
+    align-items: center; gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--rule);
+  }
+  table.games td { display: block; padding: 0; border: 0; }
+  table.games td:nth-child(1) { grid-area: date; }
+  table.games td:nth-child(2) { grid-area: opp; overflow-wrap: anywhere; }
+  table.games td:nth-child(3) { grid-area: open; font-size: 13.5px; overflow-wrap: anywhere; }
+  table.games td:nth-child(4) { grid-area: res; }
+  table.games td:nth-child(5) { grid-area: time; }
+  table.games td:nth-child(6) { grid-area: eng; }
+  table.games td:nth-child(4), table.games td:nth-child(6) { justify-self: end; }
+
+  .review { gap: 20px; }
+  .pc { font-size: min(8vw, 30px); }
+  .co { font-size: min(2.4vw, 10px); }
+  .ply-nav { gap: 8px; }
+  .ply-nav .btn { min-width: 44px; min-height: 44px; font-size: 18px; }
+  .ply-nav input[type="range"] { height: 32px; }
+  .ply-nav .num { width: 92px; }
+
+  .review > .chat-col { height: 75dvh; min-height: 420px; }
+  .chat-log { padding-right: 4px; }
+  .msg .body { overflow-wrap: anywhere; }
+  .composer textarea { min-height: 48px; }
+  .composer .btn { min-width: 64px; }
+
+  .freq .tag { width: 38%; min-width: 0; overflow-wrap: anywhere; }
+}
