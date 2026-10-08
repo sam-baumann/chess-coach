@@ -71,6 +71,18 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
   const showFen = useCallback((fen: string) => setOffGame({ fen, line: null, move: null }), []);
 
   /**
+   * Stacked on a phone, the transcript sits below the board: a position link in
+   * the chat changes a board that is off screen, which reads as a dead tap. Only
+   * the chat's own jumps do this — the arrows and slider live beside the board.
+   */
+  const boardRef = useRef<HTMLDivElement>(null);
+  const revealBoard = useCallback(() => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      boardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, []);
+
+  /**
    * The same, for a what-if the coach wrote as notation rather than as a FEN.
    * Only the server can turn "10.a3" into a position — it replays the moves
    * against the real game — so unlike showFen this one is a round trip, and the
@@ -91,6 +103,7 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
           return;
         }
         setOffGame({ fen: at.fen, line, move: at.label });
+        revealBoard();
       };
 
       const cached = lineCache.current.get(line);
@@ -109,7 +122,22 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
         // bug this feature exists to fix.
         .catch((e: Error) => setError(`Couldn't show ${line}: ${e.message}`));
     },
-    [gameId],
+    [gameId, revealBoard],
+  );
+
+  const chatJump = useCallback(
+    (next: number) => {
+      toPly(next);
+      revealBoard();
+    },
+    [toPly, revealBoard],
+  );
+  const chatFen = useCallback(
+    (fen: string) => {
+      showFen(fen);
+      revealBoard();
+    },
+    [showFen, revealBoard],
   );
 
   useEffect(() => {
@@ -205,15 +233,17 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
         {/* The frame is the only marker that the board has left the game — no
             panel, no strip. An arrow brings it back. */}
         <div className={`board-col${offGame ? " off-game" : ""}`}>
-          <Board
-            fen={boardFen}
-            caption={
-              offGame
-                ? captionFor(offGame)
-                : `Position after ${ply} plies`
-            }
-            flip={game.userColor === "black"}
-          />
+          <div ref={boardRef} style={{ scrollMarginTop: 8 }}>
+            <Board
+              fen={boardFen}
+              caption={
+                offGame
+                  ? captionFor(offGame)
+                  : `Position after ${ply} plies`
+              }
+              flip={game.userColor === "black"}
+            />
+          </div>
 
           {swept ? (
             <>
@@ -324,8 +354,8 @@ export function ReviewView({ gameId, onBack }: { gameId: string; onBack: () => v
               session={session}
               moves={moves}
               fens={fens}
-              onJump={toPly}
-              onFen={showFen}
+              onJump={chatJump}
+              onFen={chatFen}
               onVariation={showLine}
             />
           ) : (
